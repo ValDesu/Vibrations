@@ -1,0 +1,15 @@
+/Library/
+/Temp/
+/Obj/
+/Logs/
+/UserSettings/
+/Build/
+*.csproj
+*.sln
+.idea/
+.vs/
+.DS_Store
+*.pidb
+*.userprefs
+/results.xml
+NOTES.md

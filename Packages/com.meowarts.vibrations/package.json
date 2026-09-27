@@ -1,0 +1,21 @@
+{
+  "name": "com.meowarts.vibrations",
+  "displayName": "Vibrations",
+  "version": "0.1.0",
+  "unity": "6000.0",
+  "description": "Pose-to-pose toon animation for Humanoid rigs: key poses snap with spring overshoot, anticipation and overlap, then bake to an AnimationClip. Window > Vibrations.",
+  "author": {
+    "name": "Meowarts"
+  },
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.2"
+  },
+  "keywords": [
+    "animation",
+    "tween",
+    "toon",
+    "pose",
+    "humanoid",
+    "mixamo"
+  ]
+}

@@ -1,0 +1,110 @@
+/* Vibrations: layout only. Colors come from Unity's editor theme variables, so Dark and Light skins both match. */
+
+.vb-row { flex-direction: row; align-items: center; }
+.vb-indent { margin-left: 15px; }
+.vb-pad { padding: 10px 12px; }
+
+/* Tabs fill the window */
+.vb-tabview { flex-grow: 1; }
+.vb-tabview .unity-tab-view__content-container, .vb-tabview .unity-tab__content-container { flex-grow: 1; }
+.vb-page { flex-grow: 1; }
+
+/* Sections, like Inspector groups */
+.vb-section { padding: 8px 10px 10px 10px; border-bottom-width: 1px; border-color: var(--unity-colors-inspector_titlebar-border); }
+.vb-section-title { -unity-font-style: bold; color: var(--unity-colors-default-text); margin: 2px 3px 6px 3px; }
+.vb-caption, .vb-hint { color: var(--unity-colors-label-text); opacity: 0.7; white-space: normal; margin: 0 3px 6px 3px; font-size: 11px; }
+.vb-hint { margin-top: 6px; }
+
+/* Field labels aligned like the Inspector */
+.vb-field > .unity-base-field__label, .vb-slider > .unity-base-field__label, .vb-toggle > .unity-base-field__label { min-width: 120px; width: 120px; }
+.vb-slider .unity-base-slider__text-field { width: 48px; }
+.vb-toggle--big > .unity-base-field__label { -unity-font-style: bold; }
+.vb-subtitle { margin-top: 10px; }
+.vb-btn-inline { margin-left: 4px; }
+.vb-btn-row { margin: 4px 4px 0 3px; }
+
+/* Empty state */
+.vb-empty { padding: 16px 12px; }
+.vb-empty-text { white-space: normal; margin-bottom: 12px; }
+.vb-step { margin-bottom: 8px; }
+.vb-step-number {
+    width: 18px; height: 18px; border-radius: 9px; margin-right: 8px; font-size: 10px; -unity-font-style: bold;
+    -unity-text-align: middle-center; background-color: var(--unity-colors-highlight-background); color: var(--unity-colors-highlight-text);
+}
+.vb-step-text { color: var(--unity-colors-label-text); }
+
+/* Transport */
+.vb-transport {
+    flex-direction: row; align-items: center; padding: 6px 10px;
+    background-color: var(--unity-colors-toolbar-background); border-bottom-width: 1px; border-color: var(--unity-colors-toolbar-border);
+}
+.vb-play { width: 32px; height: 26px; margin: 0 8px 0 0; padding: 4px; }
+.vb-play > Image { flex-grow: 1; }
+.vb-play--on { background-color: var(--unity-colors-highlight-background); }
+.vb-transport-middle { flex-grow: 1; }
+.vb-scrub { margin: 0 2px; }
+.vb-time { margin: 0 3px; }
+.vb-loop { margin: 0; }
+.vb-loop > .unity-base-field__label { min-width: 0; margin-right: 4px; }
+.vb-export { height: 26px; margin: 0 0 0 8px; -unity-font-style: bold; }
+
+/* Pose strip */
+.vb-strip-scroll { margin: 0 -10px; }
+.vb-strip { flex-direction: row; align-items: center; padding: 0 10px 2px 10px; }
+.vb-card {
+    width: 100px; padding: 4px; margin: 0; border-radius: 4px; flex-shrink: 0; align-items: center;
+    background-color: var(--unity-colors-button-background); border-width: 1px; border-color: var(--unity-colors-button-border);
+}
+.vb-card:hover { background-color: var(--unity-colors-button-background-hover); }
+.vb-card--selected, .vb-card--selected:hover { border-width: 2px; padding: 3px; border-color: var(--unity-colors-highlight-background); }
+.vb-thumb { width: 88px; height: 116px; border-radius: 3px; background-color: var(--unity-colors-object_field-background); }
+.vb-card-index { position: absolute; left: 8px; top: 6px; font-size: 10px; -unity-font-style: bold; color: var(--unity-colors-label-text); }
+.vb-card-name { margin-top: 4px; max-width: 88px; overflow: hidden; text-overflow: ellipsis; }
+.vb-card-meta { font-size: 10px; color: var(--unity-colors-label-text); opacity: 0.7; }
+.vb-card--add { height: 160px; justify-content: center; background-color: rgba(0, 0, 0, 0); }
+.vb-add-plus { font-size: 22px; color: var(--unity-colors-label-text); }
+
+.vb-timing {
+    height: 30px; margin: 8px 0 0 0; border-radius: 3px; border-width: 1px;
+    background-color: var(--unity-colors-object_field-background); border-color: var(--unity-colors-object_field-border);
+}
+.vb-timing--resize { cursor: resize-horizontal; }
+
+.vb-link { align-items: center; margin: 0 4px; padding: 3px 4px; border-radius: 3px; flex-shrink: 0; }
+.vb-link:hover { background-color: var(--unity-colors-button-background-hover); }
+.vb-link-arrow { font-size: 13px; color: var(--unity-colors-label-text); }
+.vb-link-time { font-size: 10px; color: var(--unity-colors-label-text); opacity: 0.8; }
+.vb-link--custom .vb-link-arrow, .vb-link--custom .vb-link-time { color: var(--unity-colors-highlight-background-hover); opacity: 1; }
+
+/* Templates */
+.vb-grid { flex-direction: row; flex-wrap: wrap; margin: 2px 0 0 3px; }
+.vb-template { margin: 0 6px 6px 0; }
+
+/* Feel */
+.vb-chips { flex-direction: row; flex-wrap: wrap; margin: 0 0 2px 0; }
+.vb-chip { margin: 0 4px 4px 3px; }
+.vb-chip--on { background-color: var(--unity-colors-highlight-background); color: var(--unity-colors-highlight-text); }
+.vb-curve {
+    height: 80px; margin: 2px 3px 8px 3px; border-radius: 3px; border-width: 1px;
+    background-color: var(--unity-colors-object_field-background); border-color: var(--unity-colors-object_field-border);
+    color: var(--unity-colors-highlight-background-hover); /* stroke color, read by CurveView */
+}
+.vb-curve-label { position: absolute; left: 5px; font-size: 9px; color: var(--unity-colors-label-text); opacity: 0.6; }
+
+/* Humanize */
+.vb-group {
+    margin: 4px 3px 0 3px; padding: 8px; border-radius: 3px; border-width: 1px;
+    background-color: var(--unity-colors-helpbox-background); border-color: var(--unity-colors-helpbox-border);
+}
+
+/* AI */
+.vb-prompt { margin: 2px 3px 6px 3px; }
+.vb-prompt .unity-text-field__input { min-height: 64px; -unity-text-align: upper-left; white-space: normal; }
+.vb-ai-status { margin: 4px 0 0 8px; }
+.vb-ai-msg { white-space: normal; margin: 0 3px 6px 3px; padding: 6px 8px; border-radius: 3px; }
+.vb-ai-user { background-color: var(--unity-colors-highlight-background); color: var(--unity-colors-highlight-text); }
+.vb-ai-assistant { background-color: var(--unity-colors-helpbox-background); border-width: 1px; border-color: var(--unity-colors-helpbox-border); }
+.vb-ai-tool { padding: 0 8px; margin-bottom: 2px; font-size: 11px; opacity: 0.7; }
+.vb-ai-error { color: rgb(224, 108, 108); }
+.vb-ai-image { margin: 0 3px 6px 3px; border-radius: 3px; align-self: flex-start; width: 100%; }
+.vb-link-button { align-self: flex-start; margin-bottom: 4px; }

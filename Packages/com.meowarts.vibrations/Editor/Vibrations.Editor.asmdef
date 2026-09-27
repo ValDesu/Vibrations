@@ -1,0 +1,4 @@
+{
+    "name": "Vibrations.Editor",
+    "includePlatforms": ["Editor"]
+}
