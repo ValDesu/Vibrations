@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
@@ -60,6 +61,12 @@ namespace Vibrations
         PoseRenderer.Snapshot ghost, scratch;
         readonly List<RenderTexture> thumbs = new();
         readonly List<Image> cardImages = new();
+        readonly List<VisualElement> cards = new();
+        readonly List<VisualElement> chips = new(); // transition chip after each card (null for a one-shot's last pose)
+        readonly SortedSet<int> picked = new(); // multi-selection (Shift / Cmd-Ctrl click), includes `selected` when used
+        VisualElement addCard, dropSlot, dragGhost;
+        List<int> dragSet; // poses being dragged
+        Vector2 dragGrab;  // pointer offset inside the grabbed card
         bool thumbsDirty = true;
         Pose lastRendered;
         string signature;
@@ -104,6 +111,7 @@ namespace Vibrations
             SceneView.duringSceneGui += OnSceneGUI;
             EditorApplication.update += Tick;
             Undo.undoRedoPerformed += OnUndo;
+            Undo.undoRedoEvent += OnUndoRedo;
             if (animator == null && Selection.activeGameObject)
                 animator = Selection.activeGameObject.GetComponentInParent<Animator>();
             so = anim != null ? new SerializedObject(anim) : null;
@@ -115,6 +123,7 @@ namespace Vibrations
             SceneView.duringSceneGui -= OnSceneGUI;
             EditorApplication.update -= Tick;
             Undo.undoRedoPerformed -= OnUndo;
+            Undo.undoRedoEvent -= OnUndoRedo;
             aiCancel?.Cancel();
             foreach (var t in aiImages) DestroyImmediate(t);
             aiImages.Clear();
@@ -124,6 +133,12 @@ namespace Vibrations
         }
 
         void OnDestroy() => RestoreRest();
+
+        // Undoing a pose operation restores the data; show it on the rig, or the next commit would overwrite the undo.
+        void OnUndoRedo(in UndoRedoInfo info)
+        {
+            if (!previewing && PoseEdits.Contains(info.undoName)) ApplySelected();
+        }
 
         void OnUndo()
         {
@@ -223,7 +238,16 @@ namespace Vibrations
         void Select(int i)
         {
             Stop();
-            if (i == selected) return;
+            if (picked.Count > 0)
+            {
+                picked.Clear();
+                signature = null;
+            }
+            if (i == selected)
+            {
+                Refresh();
+                return;
+            }
             Commit();
             selected = i;
             activeBone = -1;
@@ -240,8 +264,11 @@ namespace Vibrations
             SceneView.RepaintAll();
         }
 
+        static readonly HashSet<string> PoseEdits = new() { "Vibrations AI" }; // undo names that change pose data
+
         void EditPoses(string undoName, Action edit)
         {
+            PoseEdits.Add(undoName);
             Stop();
             Commit();
             Undo.RecordObject(anim, undoName);
@@ -253,26 +280,107 @@ namespace Vibrations
             Refresh();
         }
 
-        void AddPose(int after) => EditPoses("Add pose", () =>
+        void AddPose(int after, bool atEnd = false) => EditPoses("Add pose", () =>
         {
             var p = after >= 0 ? anim.poses[after].Clone() : new Pose();
             if (after < 0) Rig.Capture(bones, p);
             p.name = $"Pose {anim.poses.Count + 1}";
-            anim.poses.Insert(after + 1, p);
-            selected = after + 1;
+            selected = atEnd ? anim.poses.Count : after + 1;
+            anim.poses.Insert(selected, p);
         });
 
-        void MovePose(int i, int to) => EditPoses("Move pose", () =>
+        // Moves the poses (in order) as a block to `slot`, counted among the poses that stay.
+        void MovePoses(List<int> targets, int slot)
         {
-            (anim.poses[i], anim.poses[to]) = (anim.poses[to], anim.poses[i]);
-            if (selected == i) selected = to;
-            else if (selected == to) selected = i;
+            slot = Mathf.Clamp(slot, 0, anim.poses.Count - targets.Count);
+            var order = MoveOrder(anim.poses.Count, targets, slot);
+            if (order.SequenceEqual(Enumerable.Range(0, anim.poses.Count))) return; // dropped where it was
+            EditPoses("Move poses", () =>
+            {
+                var current = HasSelection ? anim.poses[selected] : null;
+                var reordered = order.Select(k => anim.poses[k]).ToList();
+                anim.poses.Clear();
+                anim.poses.AddRange(reordered);
+                if (current != null) selected = anim.poses.IndexOf(current);
+                Pick(slot, targets.Count, keepSelected: true);
+            });
+        }
+
+        // New order of pose indices after moving `targets` (in order) to `slot` among the poses that stay.
+        public static List<int> MoveOrder(int count, IList<int> targets, int slot)
+        {
+            var remaining = Enumerable.Range(0, count).Where(k => !targets.Contains(k)).ToList();
+            return remaining.Take(slot).Concat(targets).Concat(remaining.Skip(slot)).ToList();
+        }
+
+        void DuplicatePoses(List<int> targets, bool mirrored, bool atEnd) => EditPoses(mirrored ? "Duplicate mirrored" : "Duplicate", () =>
+        {
+            var copies = targets.Select(k => anim.poses[k].Clone()).ToList();
+            if (mirrored)
+            {
+                var saved = Rig.SaveAll(animator.transform);
+                foreach (var p in copies)
+                {
+                    Rig.Mirror(humanHandler, bones, p, animator.transform);
+                    p.name = MirroredName(p.name);
+                }
+                Rig.RestoreAll(saved);
+            }
+            int at = atEnd ? anim.poses.Count : targets[^1] + 1;
+            anim.poses.InsertRange(at, copies);
+            Pick(at, copies.Count, keepSelected: false);
         });
 
-        void DeletePose(int i) => EditPoses("Delete pose", () =>
+        void MirrorPoses(List<int> targets) => EditPoses("Mirror pose", () =>
         {
-            anim.poses.RemoveAt(i);
-            if (selected >= i) selected = Mathf.Min(Mathf.Max(selected - 1, 0), anim.poses.Count - 1);
+            var saved = Rig.SaveAll(animator.transform);
+            foreach (var k in targets)
+            {
+                var p = anim.poses[k].Clone();
+                Rig.Mirror(humanHandler, bones, p, animator.transform);
+                anim.poses[k] = p;
+            }
+            Rig.RestoreAll(saved);
+        });
+
+        void DeletePoses(List<int> targets) => EditPoses("Delete pose", () =>
+        {
+            foreach (var k in targets.OrderByDescending(k => k)) anim.poses.RemoveAt(k);
+            selected = Mathf.Clamp(targets[0], 0, anim.poses.Count - 1);
+            picked.Clear();
+        });
+
+        // Multi-select `count` poses from `start`; the first one becomes the edited pose unless keepSelected.
+        void Pick(int start, int count, bool keepSelected)
+        {
+            picked.Clear();
+            if (count > 1) for (int k = 0; k < count; k++) picked.Add(start + k);
+            if (!keepSelected) selected = start;
+        }
+
+        // "Contact R" -> "Contact L", "Left kick" -> "Right kick", anything else gets " (mirror)".
+        static string MirroredName(string name)
+        {
+            var words = name.Split(' ');
+            bool swapped = false;
+            for (int w = 0; w < words.Length; w++)
+            {
+                var swap = words[w] switch { "R" => "L", "L" => "R", "Right" => "Left", "Left" => "Right", "right" => "left", "left" => "right", _ => null };
+                if (swap != null) (words[w], swapped) = (swap, true);
+            }
+            return swapped ? string.Join(" ", words) : name + " (mirror)";
+        }
+
+        static Pose clipboard; // copied pose, shared by every Vibrations window
+
+        void PastePose(int i) => EditPoses("Paste pose", () =>
+        {
+            var p = clipboard.Clone();
+            p.name = anim.poses[i].name;
+            p.hold = anim.poses[i].hold;
+            p.customTransition = anim.poses[i].customTransition;
+            p.transition = anim.poses[i].transition;
+            anim.poses[i] = p;
         });
 
         void RestoreRest()
@@ -313,15 +421,16 @@ namespace Vibrations
             bones[0].position = root.TransformPoint(local);
         }
 
-        void FixAllPoses() => EditPoses("Fix all poses", () =>
+        // Runs a rig operation (ground, center...) on each target pose and stores the result.
+        void EditEach(List<int> targets, string undoName, Action operation) => EditPoses(undoName, () =>
         {
-            for (int i = 0; i < anim.poses.Count; i++)
+            foreach (var k in targets)
             {
-                var p = anim.poses[i];
+                var p = anim.poses[k].Clone();
                 Rig.Apply(bones, p.rotations, p.hipsPosition);
-                Center();
-                Ground();
+                operation();
                 Rig.Capture(bones, p);
+                anim.poses[k] = p;
             }
         });
 
@@ -335,6 +444,10 @@ namespace Vibrations
             signature = null;
             Refresh();
         }
+
+        List<int> AllPoses() => Enumerable.Range(0, anim.poses.Count).ToList();
+
+        List<int> SelectedPoses() => HasSelection ? Targets(selected) : new List<int>();
 
         float SnapToFloor(float y, float sole)
         {
@@ -638,6 +751,9 @@ namespace Vibrations
             var scroller = new ScrollView(ScrollViewMode.Horizontal) .Cls("vb-strip-scroll");
             section.Add(scroller);
             strip = Add(scroller.contentContainer, "vb-strip");
+            strip.RegisterCallback<PointerMoveEvent>(OnStripPointerMove);
+            strip.RegisterCallback<PointerUpEvent>(OnStripPointerUp);
+            strip.RegisterCallback<PointerCaptureOutEvent>(e => { if (e.target == strip) EndDrag(); }); // focus lost mid-drag: cancel
             timingBar = new TimingBar(() => anim, () => selected, () => previewing ? previewTime : -1f, Select, () => so.Update());
             section.Add(timingBar);
             var timingRow = Add(section, "vb-row");
@@ -651,17 +767,21 @@ namespace Vibrations
         {
             strip.Clear();
             cardImages.Clear();
+            cards.Clear();
+            chips.Clear();
             int n = anim.poses.Count;
+            picked.RemoveWhere(k => k >= n);
             for (int i = 0; i < n; i++)
             {
                 strip.Add(Card(i));
-                if (i < n - 1 || anim.loop) strip.Add(TransitionChip(i, last: i == n - 1));
+                chips.Add(i < n - 1 || anim.loop ? TransitionChip(i, last: i == n - 1) : null);
+                if (chips[i] != null) strip.Add(chips[i]);
             }
-            var add = MakeButton("", () => AddPose(selected), "vb-card", "vb-card--add");
-            add.Add(new Label("+") .Cls("vb-add-plus"));
-            add.Add(new Label("Add pose") .Cls("vb-card-meta"));
-            add.tooltip = "Copy the selected pose as a new pose after it";
-            strip.Add(add);
+            addCard = MakeButton("", () => AddPose(selected), "vb-card", "vb-card--add");
+            addCard.Add(new Label("+").Cls("vb-add-plus"));
+            addCard.Add(new Label("Add pose").Cls("vb-card-meta"));
+            addCard.tooltip = "Copy the selected pose as a new pose after it";
+            strip.Add(addCard);
         }
 
         VisualElement Card(int i)
@@ -669,23 +789,164 @@ namespace Vibrations
             var p = anim.poses[i];
             var card = new VisualElement().Cls("vb-card");
             if (i == selected) card.AddToClassList("vb-card--selected");
+            else if (picked.Contains(i)) card.AddToClassList("vb-card--picked");
             var image = new Image { image = i < thumbs.Count ? thumbs[i] : null, scaleMode = ScaleMode.ScaleToFit }.Cls("vb-thumb");
             cardImages.Add(image);
             card.Add(image);
-            card.Add(new Label((i + 1).ToString()) .Cls("vb-card-index"));
-            card.Add(new Label(p.name) .Cls("vb-card-name"));
-            card.Add(new Label($"hold {p.hold:0.00}s") .Cls("vb-card-meta"));
-            card.RegisterCallback<ClickEvent>(_ => Select(i));
+            card.Add(new Label((i + 1).ToString()).Cls("vb-card-index"));
+            card.Add(new Label(p.name).Cls("vb-card-name"));
+            card.Add(new Label($"hold {p.hold:0.00}s").Cls("vb-card-meta"));
+            DragToReorder(card, i);
             card.AddManipulator(new ContextualMenuManipulator(e =>
             {
-                e.menu.AppendAction("Duplicate", _ => AddPose(i));
-                e.menu.AppendAction("Move left", _ => MovePose(i, i - 1), i > 0 ? DropdownMenuAction.Status.Normal : DropdownMenuAction.Status.Disabled);
-                e.menu.AppendAction("Move right", _ => MovePose(i, i + 1), i < anim.poses.Count - 1 ? DropdownMenuAction.Status.Normal : DropdownMenuAction.Status.Disabled);
+                var targets = Targets(i);
+                string many = targets.Count > 1 ? $" {targets.Count} Poses" : "";
+                DropdownMenuAction.Status When(bool enabled) => enabled ? DropdownMenuAction.Status.Normal : DropdownMenuAction.Status.Disabled;
+                e.menu.AppendAction("Duplicate" + many, _ => DuplicatePoses(targets, mirrored: false, atEnd: false));
+                e.menu.AppendAction("Duplicate" + many + " at End", _ => DuplicatePoses(targets, mirrored: false, atEnd: true));
+                e.menu.AppendAction("Duplicate" + many + " Mirrored", _ => DuplicatePoses(targets, mirrored: true, atEnd: false));
+                e.menu.AppendAction("Duplicate" + many + " Mirrored at End", _ => DuplicatePoses(targets, mirrored: true, atEnd: true));
+                e.menu.AppendAction("Mirror" + many + " (L ↔ R)", _ => MirrorPoses(targets));
                 e.menu.AppendSeparator();
-                e.menu.AppendAction("Delete", _ => DeletePose(i), anim.poses.Count > 1 ? DropdownMenuAction.Status.Normal : DropdownMenuAction.Status.Disabled);
+                e.menu.AppendAction("Copy Pose", _ => { Commit(); clipboard = anim.poses[i].Clone(); }, When(targets.Count == 1));
+                e.menu.AppendAction("Paste Pose", _ => PastePose(i), When(clipboard != null && targets.Count == 1));
+                e.menu.AppendSeparator();
+                e.menu.AppendAction("Move" + many + " Left", _ => MovePoses(targets, targets[0] - 1), When(targets[0] > 0));
+                e.menu.AppendAction("Move" + many + " Right", _ => MovePoses(targets, targets[0] + 1), When(targets[0] + targets.Count < anim.poses.Count));
+                e.menu.AppendSeparator();
+                e.menu.AppendAction("Delete" + many, _ => DeletePoses(targets), When(anim.poses.Count > targets.Count));
             }));
-            card.tooltip = "Click to edit. Right-click for more.";
+            card.tooltip = "Click to edit, Shift-click to select a range, Cmd/Ctrl-click to add or remove one. Drag to reorder, right-click for more.";
+            cards.Add(card);
             return card;
+        }
+
+        // The poses an action applies to: the multi-selection if the card is part of it, else just that card.
+        List<int> Targets(int i) => picked.Count > 1 && picked.Contains(i) ? new List<int>(picked) : new List<int> { i };
+
+        void Click(int i, bool shift, bool toggle)
+        {
+            if (shift && HasSelection) // range from the pose being edited, which stays the one on the rig
+            {
+                picked.Clear();
+                for (int k = Mathf.Min(selected, i); k <= Mathf.Max(selected, i); k++) picked.Add(k);
+            }
+            else if (toggle && HasSelection && i != selected)
+            {
+                picked.Add(selected);
+                if (!picked.Remove(i)) picked.Add(i);
+            }
+            else
+            {
+                Select(i);
+                return;
+            }
+            signature = null;
+            Refresh();
+        }
+
+        // Click selects; dragging past a few pixels hands the pointer to the strip, which runs the drag.
+        void DragToReorder(VisualElement card, int i)
+        {
+            float startX = 0f;
+            card.RegisterCallback<PointerDownEvent>(e =>
+            {
+                if (e.button != 0) return;
+                startX = e.position.x;
+                dragGrab = (Vector2)e.position - card.worldBound.position;
+                card.CapturePointer(e.pointerId);
+            });
+            card.RegisterCallback<PointerMoveEvent>(e =>
+            {
+                if (card.HasPointerCapture(e.pointerId) && Mathf.Abs(e.position.x - startX) > 6f) BeginDrag(card, i, e.pointerId, e.position);
+            });
+            card.RegisterCallback<PointerUpEvent>(e =>
+            {
+                if (!card.HasPointerCapture(e.pointerId)) return;
+                card.ReleasePointer(e.pointerId);
+                Click(i, e.shiftKey, e.actionKey);
+            });
+        }
+
+        void BeginDrag(VisualElement card, int i, int pointerId, Vector2 position)
+        {
+            dragSet = Targets(i);
+            var size = new Vector2(card.resolvedStyle.width, card.resolvedStyle.height);
+            strip.CapturePointer(pointerId);
+
+            // Each card moves with its transition chip. The dragged ones step out and a slot of exactly their width
+            // (a box per pose, a gap per chip) opens where they'll land, so nothing else collapses or shifts.
+            dropSlot = new VisualElement { pickingMode = PickingMode.Ignore }.Cls("vb-drop-group");
+            foreach (var k in dragSet)
+            {
+                var box = new VisualElement { pickingMode = PickingMode.Ignore }.Cls("vb-drop-slot");
+                box.style.width = size.x;
+                box.style.height = size.y;
+                dropSlot.Add(box);
+                cards[k].style.display = DisplayStyle.None;
+                if (chips[k] == null) continue;
+                var gap = new VisualElement { pickingMode = PickingMode.Ignore };
+                gap.style.width = chips[k].resolvedStyle.width + chips[k].resolvedStyle.marginLeft + chips[k].resolvedStyle.marginRight;
+                dropSlot.Add(gap);
+                chips[k].style.display = DisplayStyle.None;
+            }
+            strip.Insert(strip.IndexOf(cards[dragSet[0]]), dropSlot);
+
+            dragGhost = new VisualElement { pickingMode = PickingMode.Ignore }.Cls("vb-card", "vb-card--selected", "vb-drag-ghost");
+            dragGhost.style.width = size.x;
+            dragGhost.style.height = size.y;
+            dragGhost.Add(new Image { image = i < thumbs.Count ? thumbs[i] : null, scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore }.Cls("vb-thumb"));
+            dragGhost.Add(new Label(dragSet.Count > 1 ? $"{dragSet.Count} poses" : anim.poses[i].name) { pickingMode = PickingMode.Ignore }.Cls("vb-card-name"));
+            rootVisualElement.Add(dragGhost);
+            MoveGhost(position);
+        }
+
+        void OnStripPointerMove(PointerMoveEvent e)
+        {
+            if (dragSet == null || !strip.HasPointerCapture(e.pointerId)) return;
+            MoveGhost(e.position);
+            int slot = SlotIndex(e.position.x);
+            var visible = cards.Where((_, k) => !dragSet.Contains(k)).ToList();
+            var before = slot < visible.Count ? visible[slot] : addCard;
+            dropSlot.RemoveFromHierarchy();
+            strip.Insert(strip.IndexOf(before), dropSlot);
+        }
+
+        void OnStripPointerUp(PointerUpEvent e)
+        {
+            if (dragSet == null || !strip.HasPointerCapture(e.pointerId)) return;
+            var moved = dragSet;
+            int slot = SlotIndex(e.position.x);
+            strip.ReleasePointer(e.pointerId);
+            EndDrag();
+            MovePoses(moved, slot);
+        }
+
+        void MoveGhost(Vector2 pointer)
+        {
+            var local = rootVisualElement.WorldToLocal(pointer - dragGrab);
+            dragGhost.style.left = local.x;
+            dragGhost.style.top = local.y;
+        }
+
+        // Where the dragged poses go, counted among the poses that stay.
+        int SlotIndex(float x)
+        {
+            int slot = 0;
+            for (int k = 0; k < cards.Count; k++)
+                if (!dragSet.Contains(k) && cards[k].worldBound.center.x < x) slot++;
+            return slot;
+        }
+
+        void EndDrag()
+        {
+            if (dragSet == null) return;
+            dragGhost?.RemoveFromHierarchy();
+            dropSlot?.RemoveFromHierarchy();
+            dragGhost = dropSlot = null;
+            dragSet = null;
+            signature = null; // rebuild the strip: shows cards and chips again
+            Refresh();
         }
 
         VisualElement TransitionChip(int i, bool last)
@@ -714,13 +975,20 @@ namespace Vibrations
             transitionBox = Add(section, "vb-indent");
             curves.Add(TransitionControls(transitionBox, "", () => HasSelection ? anim.TransitionOut(selected) : default));
             var tools = Section(poseBox, "TOOLS");
-            var actions = Add(tools, "vb-row");
-            actions.Add(MakeButton("Ground", () => { if (bones == null) return; Undo.RecordObjects(bones, "Ground pose"); Ground(); }, "vb-btn-row"));
-            actions.Add(MakeButton("Center", () => { if (bones == null) return; Undo.RecordObjects(bones, "Center pose"); Center(); }, "vb-btn-row"));
-            actions.Add(MakeButton("Reset to rest", () => { if (bones == null) return; Undo.RecordObjects(bones, "Reset pose"); RestoreRest(); }, "vb-btn-row"));
-            var allRow = Add(tools, "vb-row");
-            allRow.Add(MakeButton("Fix All Poses", FixAllPoses, "vb-btn-row"));
-            allRow.Add(Caption("Center and ground every pose."));
+            var one = Add(tools, "vb-row");
+            one.Add(new Label("Selected").Cls("vb-tools-label"));
+            one.Add(MakeButton("Ground", () => EditEach(SelectedPoses(), "Ground pose", Ground), "vb-btn-row"));
+            one.Add(MakeButton("Center", () => EditEach(SelectedPoses(), "Center pose", Center), "vb-btn-row"));
+            one.Add(MakeButton("Mirror", () => MirrorPoses(SelectedPoses()), "vb-btn-row"));
+            one.Add(MakeButton("Reset to Rest", () => EditEach(SelectedPoses(), "Reset pose", RestoreRest), "vb-btn-row"));
+            var all = Add(tools, "vb-row");
+            all.Add(new Label("All poses").Cls("vb-tools-label"));
+            all.Add(MakeButton("Ground All", () => EditEach(AllPoses(), "Ground all poses", Ground), "vb-btn-row"));
+            all.Add(MakeButton("Center All", () => EditEach(AllPoses(), "Center all poses", Center), "vb-btn-row"));
+            all.Add(MakeButton("Mirror All", () => MirrorPoses(AllPoses()), "vb-btn-row"));
+            all.Add(MakeButton("Fix All", () => EditEach(AllPoses(), "Fix all poses", () => { Center(); Ground(); }), "vb-btn-row"));
+            tools.Add(Caption("Selected = the pose you're editing, or every pose you Shift/Cmd-clicked. " +
+                              "Ground puts the lowest foot on the floor, Center puts the hips over the character, Fix does both."));
             tools.Add(new Label("In the Scene view: drag ● hands and feet, ■ hips (feet stay planted). Click any joint to rotate it with the rings.")
                 .Cls("vb-hint"));
             poseFields.Add(name);
@@ -1200,7 +1468,7 @@ namespace Vibrations
 
         string Signature()
         {
-            var sb = new StringBuilder().Append(selected).Append(anim.loop);
+            var sb = new StringBuilder().Append(selected).Append(anim.loop).Append(string.Join(",", picked));
             foreach (var p in anim.poses)
                 sb.Append('|').Append(RuntimeHelpers.GetHashCode(p)).Append(p.name).Append(p.hold).Append(p.customTransition).Append(p.transition.duration);
             sb.Append(anim.transition.duration);

@@ -350,6 +350,59 @@ namespace Vibrations.Tests
         }
 
         [Test]
+        public void MirrorSwapsSidesExactly()
+        {
+            var model = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Characters/default.fbx");
+            if (model == null) Assert.Ignore("Needs Assets/Characters/default.fbx (Vibrations dev project).");
+            var go = Object.Instantiate(model);
+            // Away from the origin and turned: HumanPose body values are world space, which broke mirroring here.
+            go.transform.SetPositionAndRotation(new Vector3(5f, 0f, 3f), Quaternion.Euler(0f, 90f, 0f));
+            try
+            {
+                var animator = go.GetComponent<Animator>();
+                var bones = Rig.Bind(animator);
+                using var handler = new HumanPoseHandler(animator.avatar, animator.transform);
+                var rest = new Pose();
+                Rig.Capture(bones, rest);
+                var soles = new float[4];
+                for (int k = 0; k < 4; k++) soles[k] = bones[Rig.SoleBones[k]].position.y;
+                var rig = new TemplateRig { root = animator.transform, bones = bones, handler = handler, rest = rest, soles = soles, floorHeight = 0f, humanScale = animator.humanScale };
+                var walk = rig.CreateAnimation(BuiltInTemplates.All.First(t => t.name == "Walk"));
+                var contactR = walk.poses.First(p => p.name == "Contact R");
+                var contactL = walk.poses.First(p => p.name == "Contact L");
+
+                var root = animator.transform;
+                var mirrored = contactR.Clone();
+                Rig.Mirror(handler, bones, mirrored, root);
+                var hips = root.InverseTransformPoint(bones[0].position);
+                Assert.Less(new Vector2(hips.x, hips.z).magnitude, 0.2f, "mirrored body stays over the character");
+                for (int b = 0; b < bones.Length; b++)
+                    if (bones[b]) Assert.Less(Quaternion.Angle(contactL.rotations[b], mirrored.rotations[b]), 3f, $"bone {b}: mirrored Contact R should be Contact L");
+
+                Rig.Mirror(handler, bones, mirrored, root);
+                for (int b = 0; b < bones.Length; b++)
+                    if (bones[b]) Assert.Less(Quaternion.Angle(contactR.rotations[b], mirrored.rotations[b]), 1f, $"bone {b}: mirroring twice is the original");
+                Assert.Less(Vector3.Distance(contactR.hipsPosition, mirrored.hipsPosition), 0.01f);
+
+                var tools = new AiTools(walk, rig, root: root);
+                StringAssert.StartsWith("Inserted", tools.Execute("mirror_pose", Newtonsoft.Json.Linq.JObject.Parse(@"{""index"":0,""as_new_pose"":true,""name"":""Mirrored""}")).text);
+                Assert.AreEqual(5, walk.poses.Count);
+                Assert.AreEqual("Mirrored", walk.poses[1].name);
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+
+        [Test]
+        public void MovingPosesKeepsTheirOrderAsABlock()
+        {
+            CollectionAssert.AreEqual(new[] { 0, 2, 3, 1, 4 }, VibrationsWindow.MoveOrder(5, new[] { 1 }, 3), "one pose to the right");
+            CollectionAssert.AreEqual(new[] { 3, 0, 1, 2, 4 }, VibrationsWindow.MoveOrder(5, new[] { 3 }, 0), "one pose to the front");
+            CollectionAssert.AreEqual(new[] { 1, 0, 2, 3, 4 }, VibrationsWindow.MoveOrder(5, new[] { 0, 2 }, 1), "a split selection gathers into a block");
+            CollectionAssert.AreEqual(new[] { 2, 3, 4, 0, 1 }, VibrationsWindow.MoveOrder(5, new[] { 0, 1 }, 3), "a block to the end");
+            CollectionAssert.AreEqual(new[] { 0, 1, 2, 3, 4 }, VibrationsWindow.MoveOrder(5, new[] { 1, 2 }, 1), "dropped where it was");
+        }
+
+        [Test]
         public void AutoTimingFollowsMotionAndResets()
         {
             var a = ScriptableObject.CreateInstance<VibrationsAnimation>();

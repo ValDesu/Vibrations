@@ -196,6 +196,7 @@ namespace Vibrations
                 "add_pose" => $"Adding pose '{a.Value<string>("name") ?? "AI pose"}' after {a.Value<int?>("after_index")}",
                 "update_pose" => $"Editing pose {a.Value<int?>("index")}",
                 "delete_pose" => $"Deleting pose {a.Value<int?>("index")}",
+                "mirror_pose" => $"Mirroring pose {a.Value<int?>("index")}",
                 "set_settings" => "Tuning " + string.Join(", ", ((IDictionary<string, JToken>)a).Keys),
                 "render_preview" => a.Value<string>("mode") == "motion" ? "Looking at the motion" : "Looking at the poses",
                 _ => call.name,

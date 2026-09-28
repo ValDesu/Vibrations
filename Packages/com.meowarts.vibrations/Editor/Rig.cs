@@ -41,6 +41,45 @@ namespace Vibrations
             if (Mathf.Abs(dy) > 1e-5f) bones[0].position += Vector3.up * dy;
         }
 
+        // Mirror L <-> R through Humanoid muscles, so it's exact on any rig: swap Left/Right muscles, negate the center
+        // Left-Right and Twist ones, and reflect the body across the character's YZ plane. Leaves the rig on the result.
+        public static void Mirror(HumanPoseHandler handler, Transform[] bones, Pose p, Transform root) =>
+            AtOrigin(root, () => MirrorAtOrigin(handler, bones, p));
+
+        static void MirrorAtOrigin(HumanPoseHandler handler, Transform[] bones, Pose p)
+        {
+            Apply(bones, p.rotations, p.hipsPosition);
+            var pose = new HumanPose();
+            handler.GetHumanPose(ref pose);
+            var map = MirrorMap;
+            var mirrored = new float[pose.muscles.Length];
+            for (int m = 0; m < mirrored.Length; m++) mirrored[map[m].other] = map[m].negate ? -pose.muscles[m] : pose.muscles[m];
+            pose.muscles = mirrored;
+            pose.bodyPosition.x = -pose.bodyPosition.x;
+            var q = pose.bodyRotation;
+            pose.bodyRotation = new Quaternion(q.x, -q.y, -q.z, q.w);
+            handler.SetHumanPose(ref pose);
+            Capture(bones, p);
+        }
+
+        static (int other, bool negate)[] mirrorMap;
+
+        static (int other, bool negate)[] MirrorMap => mirrorMap ??= BuildMirrorMap();
+
+        static (int other, bool negate)[] BuildMirrorMap()
+        {
+            var names = HumanTrait.MuscleName;
+            var map = new (int, bool)[names.Length];
+            for (int m = 0; m < names.Length; m++)
+            {
+                var name = names[m];
+                var other = name.StartsWith("Left ") ? "Right " + name.Substring(5) : name.StartsWith("Right ") ? "Left " + name.Substring(6) : name;
+                int index = System.Array.IndexOf(names, other);
+                map[m] = (index < 0 ? m : index, other == name && name.Contains("Left-Right"));
+            }
+            return map;
+        }
+
         // Every transform under root, for restoring after something poses the whole skeleton (fingers included).
         public static (Transform[] transforms, Quaternion[] rotations, Vector3[] positions) SaveAll(Transform root)
         {

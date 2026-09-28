@@ -21,7 +21,7 @@ Poses are Humanoid muscle values in [-1, 1]. Rule: the second word of a muscle n
 - Arm Down-Up: + up, - down. Spine/Chest/UpperChest Front-Back: + lean back, - bend forward. Head/Neck Nod Down-Up: + up. Foot Up-Down: + toes down.
 - 0 is NOT a T-pose: all-zero bends knees and elbows. Standing straight is about: Upper Leg Front-Back 0.6, Lower Leg Stretch 0.95, Arm Down-Up -0.75, Arm Front-Back 0.3, Forearm Stretch 0.75.
 - Feet are grounded on the floor automatically. Use lift (meters, avatar-scaled) only for airborne poses.
-- To mirror a pose, swap Left and Right muscle names and negate center Left-Right and Twist muscles.
+- To mirror a pose, use mirror_pose (exact): for example build Contact L from Contact R with as_new_pose.
 
 Animation craft: vary timing (key poses held longer, breakdowns short; a walk drops fast into the down pose and pushes up slower), keep arcs, favour clear silhouettes. With stepRate 12, prefer holds and snap times in multiples of 1/12 s so every pose lands on a frame.
 
@@ -61,6 +61,12 @@ Make purposeful changes with the tools, then reply with one or two short sentenc
                     ""lift"":{""type"":""number""},
                     ""transition"":" + TransitionSchema + @",
                     ""custom_transition"":{""type"":""boolean""}},
+                ""required"":[""index""]}"),
+            ("mirror_pose", "Mirror a pose left <-> right (exact, through the Humanoid muscles). Use it to build the second half of a walk or run from the first. as_new_pose inserts the mirrored copy right after the original.",
+                @"{""type"":""object"",""properties"":{
+                    ""index"":{""type"":""integer""},
+                    ""as_new_pose"":{""type"":""boolean"",""description"":""true = insert a mirrored copy after it, false = mirror in place.""},
+                    ""name"":{""type"":""string"",""description"":""Name for the mirrored copy.""}},
                 ""required"":[""index""]}"),
             ("delete_pose", "Remove a pose.",
                 @"{""type"":""object"",""properties"":{""index"":{""type"":""integer""}},""required"":[""index""]}"),
@@ -124,6 +130,7 @@ Make purposeful changes with the tools, then reply with one or two short sentenc
                     "add_pose" => AddPose(args),
                     "update_pose" => UpdatePose(args),
                     "delete_pose" => DeletePose(args),
+                    "mirror_pose" => MirrorPose(args),
                     "set_settings" => SetSettings(args),
                     "render_preview" => RenderPreview(args),
                     _ => $"Error: unknown tool {name}",
@@ -194,6 +201,23 @@ Make purposeful changes with the tools, then reply with one or two short sentenc
             anim.poses[i] = rig.ToPose(tp);
             EditorUtility.SetDirty(anim);
             return $"Updated pose {i} '{tp.name}'.";
+        }
+
+        string MirrorPose(JObject args)
+        {
+            int i = PoseIndex(args.Value<int>("index"));
+            bool asNew = args.Value<bool?>("as_new_pose") ?? false;
+            var p = anim.poses[i].Clone();
+            Rig.Mirror(rig.handler, rig.bones, p, rig.root);
+            Undo.RecordObject(anim, "AI mirror pose");
+            if (asNew)
+            {
+                p.name = args.Value<string>("name") ?? p.name + " (mirror)";
+                anim.poses.Insert(i + 1, p);
+            }
+            else anim.poses[i] = p;
+            EditorUtility.SetDirty(anim);
+            return asNew ? $"Inserted mirrored pose {i + 1} '{p.name}'. The animation now has {anim.poses.Count} poses." : $"Mirrored pose {i} in place.";
         }
 
         string DeletePose(JObject args)
