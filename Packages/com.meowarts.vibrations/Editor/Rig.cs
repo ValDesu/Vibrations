@@ -57,6 +57,17 @@ namespace Vibrations
                 if (saved.transforms[i]) saved.transforms[i].SetLocalPositionAndRotation(saved.positions[i], saved.rotations[i]);
         }
 
+        // Unity's HumanPoseHandler is inconsistent: GetHumanPose returns the body in world space, SetHumanPose reads it
+        // relative to the root. Any Get/Set away from the origin shifts and turns the character, so every Humanoid
+        // operation runs with the root temporarily at the origin, where both agree.
+        public static void AtOrigin(Transform root, System.Action action)
+        {
+            root.GetPositionAndRotation(out var position, out var rotation);
+            root.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            try { action(); }
+            finally { root.SetPositionAndRotation(position, rotation); }
+        }
+
         public static void ClampMuscles(ref HumanPose pose)
         {
             for (int m = 0; m < pose.muscles.Length; m++) pose.muscles[m] = Mathf.Clamp(pose.muscles[m], -1f, 1f);
@@ -64,7 +75,10 @@ namespace Vibrations
 
         // Pushes bones that break the avatar's muscle limits back inside them (no backward elbows, no broken wrists).
         // The Humanoid round trip isn't lossless, so every bone that was within limits is restored exactly.
-        public static void ClampToLimits(HumanPoseHandler handler, Transform[] bones)
+        public static void ClampToLimits(HumanPoseHandler handler, Transform[] bones, Transform root) =>
+            AtOrigin(root, () => ClampAtOrigin(handler, bones));
+
+        static void ClampAtOrigin(HumanPoseHandler handler, Transform[] bones)
         {
             var pose = new HumanPose();
             handler.GetHumanPose(ref pose);

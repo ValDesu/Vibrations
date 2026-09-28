@@ -23,6 +23,7 @@ namespace Vibrations
 
             var pose = new HumanPose();
             using (var handler = new HumanPoseHandler(animator.avatar, animator.transform))
+            Rig.AtOrigin(animator.transform, () => // root curves relative to the character, wherever it stands
             {
                 for (int f = 0; f < frames.Length; f++)
                 {
@@ -38,7 +39,7 @@ namespace Vibrations
                     for (int c = 0; c < names.Length; c++)
                         keys[c][f] = new Keyframe(time, c < root.Length ? root[c] : pose.muscles[muscles[c - root.Length]]);
                 }
-            }
+            });
 
             var mode = a.stepRate > 0f ? AnimationUtility.TangentMode.Constant : AnimationUtility.TangentMode.Linear;
             var curves = keys.Select(k =>

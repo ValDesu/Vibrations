@@ -286,7 +286,7 @@ Make purposeful changes with the tools, then reply with one or two short sentenc
                 if (!anim.loop) f = Mathf.RoundToInt(i / (float)(frames - 1) * (all.Length - 1));
                 Rig.Apply(rig.bones, all[f], hips[f]);
                 Secondary.Apply(rig.bones, root, lean[f]);
-                if (anim.humanize && anim.jointLimits) Rig.ClampToLimits(rig.handler, rig.bones);
+                if (anim.humanize && anim.jointLimits) Rig.ClampToLimits(rig.handler, rig.bones, rig.root);
                 DrawCell(motionSheet, i % columns, i / columns, rows, view.rotation);
             }
             return Finish(motionSheet, $"{frames} frames of the final animation ({length:0.00}s, {(anim.loop ? "loop" : "once")}), {view.name} view, " +

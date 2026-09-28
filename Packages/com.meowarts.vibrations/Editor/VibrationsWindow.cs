@@ -39,7 +39,7 @@ namespace Vibrations
         [SerializeField] float floorHeight;
         [SerializeField] int calibration;
         [SerializeField] Vector3 restHips; // hips at rest, in the character's space
-        const int Calibration = 2; // bump to re-measure floor/soles on existing setups
+        const int Calibration = 3; // bump to re-measure floor/soles on existing setups
         [SerializeField] int tab;
 
         Transform[] bones;
@@ -155,10 +155,12 @@ namespace Vibrations
             restHips = a.transform.InverseTransformPoint(bones[0].position);
             if (newCharacter || calibration != Calibration)
             {
-                // The floor is the bottom of the mesh at rest, not the root (pivots are often not at the feet).
-                floorHeight = scratch.bounds.min.y;
+                // Soles = foot/toe bone heights above the true bottom of the mesh at rest (used for foot snapping).
+                // The floor is the scene's ground under the character, or that mesh bottom if there's none.
+                float bottom = LowestPoint();
                 for (int k = 0; k < Rig.SoleBones.Length; k++)
-                    soles[k] = bones[Rig.SoleBones[k]] ? bones[Rig.SoleBones[k]].position.y - floorHeight : 0f;
+                    soles[k] = bones[Rig.SoleBones[k]] ? bones[Rig.SoleBones[k]].position.y - bottom : 0f;
+                floorHeight = SceneGround() ?? bottom;
                 calibration = Calibration;
             }
             Rig.Apply(bones, working.rotations, working.hipsPosition);
@@ -279,9 +281,26 @@ namespace Vibrations
 
         // --- Floor ---
 
-        float LowestSole() => Rig.LowestSole(bones, soles);
+        // Moves the body so its lowest actual point (the mesh, not a bone estimate) touches the floor.
+        void Ground()
+        {
+            if (poseRenderer == null) Rig.Ground(bones, soles, floorHeight);
+            else bones[0].position += Vector3.up * (floorHeight - LowestPoint());
+        }
 
-        void Ground() => Rig.Ground(bones, soles, floorHeight);
+        float LowestPoint() => poseRenderer.Lowest(ref scratch);
+
+        // Height of the scene's ground (anything with a collider) under the character, ignoring the character itself.
+        float? SceneGround()
+        {
+            Physics.SyncTransforms();
+            var root = animator.transform;
+            var origin = bones[0].position;
+            float? best = null;
+            foreach (var hit in Physics.RaycastAll(origin, Vector3.down, 10f * animator.humanScale, ~0, QueryTriggerInteraction.Ignore))
+                if (!hit.transform.IsChildOf(root) && (best == null || hit.point.y > best)) best = hit.point.y;
+            return best;
+        }
 
         // Hips back over the character's origin on X/Z (height untouched).
         void Center()
@@ -375,7 +394,7 @@ namespace Vibrations
             }
             Rig.Apply(bones, frames[f], frameHips[f]);
             Secondary.Apply(bones, animator.transform, frameLean[f]);
-            if (anim.humanize && anim.jointLimits) Rig.ClampToLimits(humanHandler, bones);
+            if (anim.humanize && anim.jointLimits) Rig.ClampToLimits(humanHandler, bones, animator.transform);
             scrub?.SetValueWithoutNotify(previewTime);
             timingBar?.MarkDirtyRepaint();
             if (timeLabel != null) timeLabel.text = $"{previewTime:0.00} / {len:0.00}s";
@@ -811,7 +830,14 @@ namespace Vibrations
             height.RegisterValueChangedCallback(e => { floorHeight = e.newValue; SceneView.RepaintAll(); });
             height.schedule.Execute(() => height.SetValueWithoutNotify(floorHeight)).Every(300);
             floorRow.Add(height);
-            floorRow.Add(MakeButton("From feet", () => { floorHeight = LowestSole(); SceneView.RepaintAll(); }, "vb-btn-inline"));
+            floorRow.Add(MakeButton("From Feet", () => { floorHeight = LowestPoint(); SceneView.RepaintAll(); }, "vb-btn-inline"));
+            floorRow.Add(MakeButton("From Scene", () =>
+            {
+                var ground = SceneGround();
+                if (ground != null) floorHeight = ground.Value;
+                else ShowNotification(new GUIContent("No ground collider under the character"));
+                SceneView.RepaintAll();
+            }, "vb-btn-inline"));
             section.Add(WindowToggle("Keep grounded", "After each edit, move the body so the lowest foot touches the floor. Turn off for jumps.",
                 () => keepGrounded, v => keepGrounded = v));
         }
@@ -859,7 +885,8 @@ namespace Vibrations
 
         TemplateRig TemplateContext() => new()
         {
-            bones = bones, handler = humanHandler, rest = rest, soles = soles, floorHeight = floorHeight, humanScale = animator.humanScale,
+            root = animator.transform, bones = bones, handler = humanHandler, rest = rest, soles = soles, floorHeight = floorHeight, humanScale = animator.humanScale,
+            lowestPoint = poseRenderer != null ? LowestPoint : null,
         };
 
         void BuildTemplates(VisualElement parent)
@@ -1294,14 +1321,14 @@ namespace Vibrations
                 }
             }
 
-            if (changed && anim.humanize && anim.jointLimits) Rig.ClampToLimits(humanHandler, bones);
+            if (changed && anim.humanize && anim.jointLimits) Rig.ClampToLimits(humanHandler, bones, animator.transform);
             if (changed && floor && keepGrounded) Ground();
         }
 
         void DrawFloor()
         {
             var center = animator.transform.position;
-            center.y = floorHeight;
+            center.y = floorHeight + 0.001f * animator.humanScale; // a hair above, so a ground plane at the same height doesn't hide it
             float extent = 1.5f * animator.humanScale, step = 0.25f * animator.humanScale;
             Handles.zTest = UnityEngine.Rendering.CompareFunction.LessEqual;
             Handles.color = new Color(1f, 1f, 1f, 0.05f);

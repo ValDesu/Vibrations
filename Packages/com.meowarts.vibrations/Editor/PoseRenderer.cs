@@ -56,6 +56,20 @@ namespace Vibrations
             return s;
         }
 
+        // World height of the lowest vertex of the character as it is posed right now (exact, unlike bounds or bones).
+        public float Lowest(ref Snapshot scratch)
+        {
+            scratch = Bake(scratch);
+            float lowest = float.MaxValue;
+            for (int i = 0; i < scratch.meshes.Length; i++)
+            {
+                if (!renderers[i]) continue;
+                var m = scratch.matrices[i];
+                foreach (var v in scratch.meshes[i].vertices) lowest = Mathf.Min(lowest, m.m10 * v.x + m.m11 * v.y + m.m12 * v.z + m.m13);
+            }
+            return lowest;
+        }
+
         // Call during a Repaint event with the camera matrices already set (Scene view, or RenderThumbnail).
         public void Draw(Snapshot s, Color color, Vector3 toViewer)
         {

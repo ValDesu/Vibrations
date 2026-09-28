@@ -107,14 +107,14 @@ namespace Vibrations.Tests
                 var rest = new Pose();
                 Rig.Capture(bones, rest);
 
-                Rig.ClampToLimits(handler, bones);
+                Rig.ClampToLimits(handler, bones, animator.transform);
                 for (int i = 0; i < bones.Length; i++)
                     if (bones[i]) Assert.Less(Quaternion.Angle(rest.rotations[i], bones[i].localRotation), 1f, $"rest bone {i} moved");
 
                 var elbow = bones[8]; // left lower arm
                 var bent = elbow.localRotation * Quaternion.Euler(0f, 0f, 150f);
                 elbow.localRotation = bent;
-                Rig.ClampToLimits(handler, bones);
+                Rig.ClampToLimits(handler, bones, animator.transform);
                 Assert.Greater(Quaternion.Angle(bent, elbow.localRotation), 10f, "impossible elbow got pulled back");
             }
             finally { Object.DestroyImmediate(go); }
@@ -168,6 +168,7 @@ namespace Vibrations.Tests
             var model = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Characters/default.fbx");
             if (model == null) Assert.Ignore("Needs Assets/Characters/default.fbx (Vibrations dev project).");
             var go = Object.Instantiate(model);
+            go.transform.SetPositionAndRotation(new Vector3(-4f, 0f, 7f), Quaternion.Euler(0f, 45f, 0f)); // not at the origin
             try
             {
                 var animator = go.GetComponent<Animator>();
@@ -177,7 +178,7 @@ namespace Vibrations.Tests
                 Rig.Capture(bones, rest);
                 var soles = new float[4];
                 for (int k = 0; k < 4; k++) soles[k] = bones[Rig.SoleBones[k]].position.y;
-                var rig = new TemplateRig { bones = bones, handler = handler, rest = rest, soles = soles, floorHeight = 0f, humanScale = animator.humanScale };
+                var rig = new TemplateRig { root = animator.transform, bones = bones, handler = handler, rest = rest, soles = soles, floorHeight = 0f, humanScale = animator.humanScale };
 
                 Assert.GreaterOrEqual(BuiltInTemplates.All.Count, 6);
                 foreach (var t in BuiltInTemplates.All)
@@ -185,6 +186,8 @@ namespace Vibrations.Tests
                 {
                     rig.Apply(tp);
                     Assert.AreEqual(tp.lift * animator.humanScale, Rig.LowestSole(bones, soles), 0.005f, $"{t.name}/{tp.name} height");
+                    var hips = animator.transform.InverseTransformPoint(bones[0].position);
+                    Assert.Less(new Vector2(hips.x, hips.z).magnitude, 0.3f, $"{t.name}/{tp.name} stays over the character");
                 }
 
                 var walk = rig.CreateAnimation(System.Linq.Enumerable.First(BuiltInTemplates.All, t => t.name == "Pixar Walk"));
@@ -292,7 +295,7 @@ namespace Vibrations.Tests
                 Rig.Capture(bones, rest);
                 var soles = new float[4];
                 for (int k = 0; k < 4; k++) soles[k] = bones[Rig.SoleBones[k]].position.y;
-                var rig = new TemplateRig { bones = bones, handler = handler, rest = rest, soles = soles, floorHeight = 0f, humanScale = animator.humanScale };
+                var rig = new TemplateRig { root = animator.transform, bones = bones, handler = handler, rest = rest, soles = soles, floorHeight = 0f, humanScale = animator.humanScale };
                 var walk = System.Linq.Enumerable.First(BuiltInTemplates.All, t => t.name == "Walk");
                 var anim = rig.CreateAnimation(walk);
                 using var renderer = new PoseRenderer(animator);
@@ -347,6 +350,43 @@ namespace Vibrations.Tests
         }
 
         [Test]
+        public void GroundingUsesTheRealMesh()
+        {
+            var model = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Characters/default.fbx");
+            if (model == null) Assert.Ignore("Needs Assets/Characters/default.fbx (Vibrations dev project).");
+            var go = Object.Instantiate(model);
+            go.transform.SetPositionAndRotation(new Vector3(2f, 0.5f, -1f), Quaternion.Euler(0f, 30f, 0f));
+            try
+            {
+                var animator = go.GetComponent<Animator>();
+                var bones = Rig.Bind(animator);
+                using var renderer = new PoseRenderer(animator);
+                using var handler = new HumanPoseHandler(animator.avatar, animator.transform);
+                PoseRenderer.Snapshot scratch = null;
+                float lowest = renderer.Lowest(ref scratch);
+                Assert.GreaterOrEqual(lowest, scratch.bounds.min.y - 1e-4f, "never below the mesh bounds");
+                bones[0].position += Vector3.down * 0.1f;
+                Assert.AreEqual(lowest - 0.1f, renderer.Lowest(ref scratch), 1e-3f, "follows the body exactly");
+                bones[0].position += Vector3.up * 0.1f;
+
+                var rest = new Pose();
+                Rig.Capture(bones, rest);
+                var rig = new TemplateRig
+                {
+                    root = animator.transform, bones = bones, handler = handler, rest = rest, soles = new float[4],
+                    floorHeight = 0.5f, humanScale = animator.humanScale, lowestPoint = () => renderer.Lowest(ref scratch),
+                };
+                foreach (var tp in BuiltInTemplates.All.First(t => t.name == "Pixar Walk").poses) // heel strikes and tiptoes
+                {
+                    rig.Apply(tp);
+                    Assert.AreEqual(0.5f + tp.lift * animator.humanScale, renderer.Lowest(ref scratch), 0.002f, $"{tp.name} sits on the floor");
+                }
+                scratch.Dispose();
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+
+        [Test]
         public void TwoBoneIKReachesTarget()
         {
             var a = new GameObject("a").transform;
@@ -373,6 +413,7 @@ namespace Vibrations.Tests
             var model = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Characters/default.fbx");
             if (model == null) Assert.Ignore("Needs Assets/Characters/default.fbx (Vibrations dev project).");
             var go = Object.Instantiate(model);
+            go.transform.SetPositionAndRotation(new Vector3(6f, 0f, -2f), Quaternion.Euler(0f, 120f, 0f)); // not at the origin
             try
             {
                 var animator = go.GetComponent<Animator>();
@@ -390,6 +431,11 @@ namespace Vibrations.Tests
                 Assert.IsTrue(clip.humanMotion);
                 Assert.AreEqual(Tween.Length(a), clip.length, 1f / 30f);
                 Assert.IsTrue(clip.isLooping);
+                foreach (var axis in new[] { "RootT.x", "RootT.z" })
+                {
+                    var curve = AnimationUtility.GetEditorCurve(clip, EditorCurveBinding.FloatCurve("", typeof(Animator), axis));
+                    Assert.Less(Mathf.Abs(curve.Evaluate(0f)), 0.2f, $"{axis} is relative to the character, not the world");
+                }
             }
             finally { Object.DestroyImmediate(go); }
         }

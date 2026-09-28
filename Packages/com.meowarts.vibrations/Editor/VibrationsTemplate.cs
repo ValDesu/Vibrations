@@ -34,14 +34,25 @@ namespace Vibrations
     // so wrap calls in Rig.SaveAll / Rig.RestoreAll.
     public struct TemplateRig
     {
+        public Transform root; // the Animator's transform
         public Transform[] bones;
         public HumanPoseHandler handler;
         public Pose rest;
         public float[] soles;
         public float floorHeight;
         public float humanScale;
+        public Func<float> lowestPoint; // exact lowest point of the mesh; null = estimate from the foot bones
 
         public void Apply(TemplatePose tp)
+        {
+            var self = this;
+            Rig.AtOrigin(root, () => self.ApplyAtOrigin(tp));
+            if (lowestPoint != null) bones[0].position += Vector3.up * (floorHeight - lowestPoint());
+            else Rig.Ground(bones, soles, floorHeight);
+            bones[0].position += Vector3.up * tp.lift * humanScale;
+        }
+
+        void ApplyAtOrigin(TemplatePose tp)
         {
             Rig.Apply(bones, rest.rotations, rest.hipsPosition);
             var hp = new HumanPose();
@@ -52,8 +63,6 @@ namespace Vibrations
             var relative = tp.bodyRotation == default ? Quaternion.identity : tp.bodyRotation;
             hp.bodyRotation *= relative;
             handler.SetHumanPose(ref hp);
-            Rig.Ground(bones, soles, floorHeight);
-            bones[0].position += Vector3.up * tp.lift * humanScale;
         }
 
         public Pose ToPose(TemplatePose tp)
@@ -66,6 +75,16 @@ namespace Vibrations
 
         public TemplatePose FromPose(Pose p)
         {
+            TemplatePose result = null;
+            var self = this;
+            Rig.AtOrigin(root, () => result = self.FromPoseAtOrigin(p));
+            float lowest = lowestPoint?.Invoke() ?? Rig.LowestSole(bones, soles);
+            result.lift = Mathf.Max(0f, lowest - floorHeight) / humanScale; // floor is in world space
+            return result;
+        }
+
+        TemplatePose FromPoseAtOrigin(Pose p)
+        {
             Rig.Apply(bones, rest.rotations, rest.hipsPosition);
             var restPose = new HumanPose();
             handler.GetHumanPose(ref restPose);
@@ -77,7 +96,6 @@ namespace Vibrations
                 name = p.name, hold = p.hold, customTransition = p.customTransition, transition = p.transition,
                 muscles = hp.muscles,
                 bodyRotation = Quaternion.Inverse(restPose.bodyRotation) * hp.bodyRotation,
-                lift = Mathf.Max(0f, Rig.LowestSole(bones, soles) - floorHeight) / humanScale,
             };
         }
 
