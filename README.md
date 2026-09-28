@@ -33,7 +33,7 @@ Press Play, then **Export Clip**, and you're done.
 - **Feel presets.** Snappy, Pixar, Rubbery, Stop-motion, Heavy, Linear, Soft. Plus choppiness (animate on
   twos), overlap, and looseness so arms drag and keep swinging after the body snaps.
 - **Fast posing.** IK handles on hands and feet, a hips handle that keeps feet planted, rotation rings on
-  every joint, a floor that feet snap to, and onion skin.
+  every joint, a floor that feet snap to, onion skin, and one-click left ↔ right mirroring.
 - **Humanize.** Joint limits, moving holds, auto-inbetweens for big jumps, subtle life, and automatic
   spine and head follow-through driven by the body's movement.
 - **Templates.** Starter animations (Pixar Walk, Sneak, Idle, Walk, Run, Jump, Sit down, Wave), each with
@@ -68,7 +68,7 @@ Or add it to `Packages/manifest.json`:
 }
 ```
 
-To pin a version, add a tag at the end: `...?path=/Packages/com.meowarts.vibrations#v0.1.0`.
+To pin a version, add a tag at the end: `...?path=/Packages/com.meowarts.vibrations#v0.2.0`.
 To update, use **Update** in the Package Manager, or change the tag.
 
 Unity installs the dependency (Newtonsoft JSON, an official Unity package) automatically.
@@ -82,7 +82,9 @@ Unity installs the dependency (Newtonsoft JSON, an official Unity package) autom
    - drag the **spheres** to move hands and feet (IK)
    - drag the **cube** to move the hips (feet stay planted)
    - click any **joint** to rotate it with the rings
-5. Click **+** on the pose strip to add the next pose. Repeat for 2 to 8 poses.
+5. Click **+** on the pose strip to add the next pose. Repeat for 2 to 8 poses. Drag cards to reorder them
+   (Shift-click to grab several), and right-click to duplicate, mirror (left ↔ right) or copy/paste poses. For a walk, pose one
+   step and use **Duplicate Mirrored** for the other.
 6. Press **Play**. Tune the feel in the **Feel** tab and the rhythm in the timing bar.
 7. Click **Export Clip**. You get a `.anim` next to the animation asset. Put it in an Animator Controller
    with **Apply Root Motion off**.
@@ -120,11 +122,11 @@ Good to know:
 
 ## Tips
 
-- **Uneven timing is what gives motion flow.** Hold key poses longer, keep breakdowns short. Drag the edges
-  in the timing bar.
+- **Uneven timing is what gives motion flow.** Hold key poses longer, keep breakdowns short. Click **Auto Timing**
+  under the timing bar for a first pass, then drag the edges to fine-tune (**Reset Timing** undoes it).
 - **Snappy body + high looseness** gives the Pixar-style drag and swing in the arms.
 - **With choppiness at 12**, keep holds and snap times in multiples of 1/12 s so every pose lands on a frame.
-- **Clean up after posing:** *Fix All Poses* (Animate tab → Tools) centers and grounds every pose.
+- **Clean up after posing:** *Fix All* (Animate tab → Tools) centers and grounds every pose.
 
 ## Limitations
 
