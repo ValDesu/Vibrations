@@ -31,6 +31,12 @@ namespace Vibrations
         public Quaternion[] rotations = new Quaternion[Tween.Bones.Length]; // local, indexed like Tween.Bones
         public Vector3 hipsPosition; // local
 
+        // Timing before Auto Timing touched it, for Reset Timing.
+        [HideInInspector] public bool hasSavedTiming;
+        [HideInInspector] public float savedHold;
+        [HideInInspector] public bool savedCustomTransition;
+        [HideInInspector] public Transition savedTransition;
+
         public Pose Clone()
         {
             var p = (Pose)MemberwiseClone();

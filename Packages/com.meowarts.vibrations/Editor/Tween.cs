@@ -1,3 +1,4 @@
+using System.Linq;
 using UnityEngine;
 using static UnityEngine.HumanBodyBones;
 
@@ -81,6 +82,63 @@ namespace Vibrations
                 if (t < end) return i;
             }
             return a.poses.Count - 1;
+        }
+
+        // How much the body moves from pose i to the next: mean joint rotation (degrees) plus hips travel.
+        public static float Motion(VibrationsAnimation a, int i)
+        {
+            var from = a.poses[i];
+            var to = a.poses[(i + 1) % a.poses.Count];
+            float degrees = 0f;
+            for (int b = 0; b < Bones.Length; b++) degrees += Quaternion.Angle(from.rotations[b], to.rotations[b]);
+            return degrees / Bones.Length + (to.hipsPosition - from.hipsPosition).magnitude * 100f; // 1 cm of hips = 1 degree
+        }
+
+        // Timing from motion: big moves get longer snaps and a longer hold on the pose they land on, small in-betweens
+        // stay quick. Total length is kept, values land on the stepRate grid, and the first run saves the old timing.
+        public static void AutoTime(VibrationsAnimation a)
+        {
+            int n = a.poses.Count, segs = a.loop ? n : n - 1;
+            if (segs < 1) return;
+            float length = Length(a);
+            var motion = new float[segs];
+            for (int i = 0; i < segs; i++) motion[i] = Motion(a, i);
+            float mean = Mathf.Max(motion.Average(), 1e-3f);
+            float holdBase = Mathf.Max(a.poses.Average(p => p.hold), 0.06f);
+
+            for (int i = 0; i < n; i++)
+            {
+                var p = a.poses[i];
+                if (!p.hasSavedTiming)
+                    (p.hasSavedTiming, p.savedHold, p.savedCustomTransition, p.savedTransition) = (true, p.hold, p.customTransition, p.transition);
+                int incoming = i > 0 ? i - 1 : a.loop ? segs - 1 : -1;
+                float landing = incoming >= 0 ? motion[incoming] / mean : 1f;
+                p.hold = holdBase * Mathf.Clamp(landing * landing, 0.1f, 3f); // breakdowns fly by, extremes read
+                if (i >= segs) continue;
+                var tr = a.TransitionOut(i);
+                tr.duration = a.transition.duration * Mathf.Lerp(0.6f, 1.6f, Mathf.Clamp01(motion[i] / mean / 2f));
+                p.transition = tr;
+                p.customTransition = true;
+            }
+
+            // Same overall length, so only the rhythm changes.
+            float scale = length / Mathf.Max(Length(a), 1e-4f);
+            float frame = a.stepRate > 0f ? 1f / a.stepRate : 0f;
+            float Snap(float v, float min) => frame > 0f ? Mathf.Max(Mathf.Round(v / frame) * frame, min) : Mathf.Max(v, min);
+            for (int i = 0; i < n; i++)
+            {
+                var p = a.poses[i];
+                p.hold = Snap(p.hold * scale, 0f);
+                if (i < segs) p.transition.duration = Mathf.Clamp(Snap(p.transition.duration * scale, frame > 0f ? frame : 0.03f), 0.02f, 0.6f);
+            }
+        }
+
+        public static bool HasSavedTiming(VibrationsAnimation a) => a.poses.Any(p => p.hasSavedTiming);
+
+        public static void ResetTiming(VibrationsAnimation a)
+        {
+            foreach (var p in a.poses.Where(p => p.hasSavedTiming))
+                (p.hold, p.customTransition, p.transition, p.hasSavedTiming) = (p.savedHold, p.savedCustomTransition, p.savedTransition, false);
         }
 
         public static void Sample(VibrationsAnimation a, float t, Quaternion[] rot, out Vector3 hips)

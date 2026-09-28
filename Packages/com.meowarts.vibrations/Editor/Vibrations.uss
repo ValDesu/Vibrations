@@ -108,3 +108,4 @@
 .vb-ai-error { color: rgb(224, 108, 108); }
 .vb-ai-image { margin: 0 3px 6px 3px; border-radius: 3px; align-self: flex-start; width: 100%; }
 .vb-link-button { align-self: flex-start; margin-bottom: 4px; }
+.vb-timing-caption { margin: 6px 0 0 6px; flex-shrink: 1; }

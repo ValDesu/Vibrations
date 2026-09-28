@@ -71,6 +71,7 @@ namespace Vibrations
         Label templatesHint;
         Button saveTemplateButton;
         TimingBar timingBar;
+        Button resetTimingButton;
         TextField aiPrompt;
         Button aiSend;
         Label aiStatus;
@@ -323,6 +324,17 @@ namespace Vibrations
                 Rig.Capture(bones, p);
             }
         });
+
+        void EditTiming(string undoName, Action<VibrationsAnimation> change)
+        {
+            Commit();
+            Undo.RecordObject(anim, undoName);
+            change(anim);
+            EditorUtility.SetDirty(anim);
+            so.Update();
+            signature = null;
+            Refresh();
+        }
 
         float SnapToFloor(float y, float sole)
         {
@@ -628,6 +640,11 @@ namespace Vibrations
             strip = Add(scroller.contentContainer, "vb-strip");
             timingBar = new TimingBar(() => anim, () => selected, () => previewing ? previewTime : -1f, Select, () => so.Update());
             section.Add(timingBar);
+            var timingRow = Add(section, "vb-row");
+            timingRow.Add(MakeButton("Auto Timing", () => EditTiming("Auto timing", Tween.AutoTime), "vb-btn-row"));
+            resetTimingButton = MakeButton("Reset Timing", () => EditTiming("Reset timing", Tween.ResetTiming), "vb-btn-row");
+            timingRow.Add(resetTimingButton);
+            timingRow.Add(Caption("Auto sets holds and snaps from how much each pose moves; the total length stays the same.").Cls("vb-timing-caption"));
         }
 
         void RebuildStrip()
@@ -1178,6 +1195,7 @@ namespace Vibrations
             }
             foreach (var c in curves) c.MarkDirtyRepaint();
             timingBar.MarkDirtyRepaint();
+            resetTimingButton.SetEnabled(Tween.HasSavedTiming(anim));
         }
 
         string Signature()

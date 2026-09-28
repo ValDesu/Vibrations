@@ -350,6 +350,41 @@ namespace Vibrations.Tests
         }
 
         [Test]
+        public void AutoTimingFollowsMotionAndResets()
+        {
+            var a = ScriptableObject.CreateInstance<VibrationsAnimation>();
+            a.loop = false;
+            a.stepRate = 12f;
+            var still = new Pose { hold = 0.1f };
+            for (int b = 0; b < still.rotations.Length; b++) still.rotations[b] = Quaternion.identity;
+            var big = still.Clone();   // big swing from `still`
+            var small = still.Clone(); // tiny adjustment from `big`
+            for (int b = 0; b < still.rotations.Length; b++)
+            {
+                big.rotations[b] = Quaternion.Euler(0f, 0f, 60f);
+                small.rotations[b] = Quaternion.Euler(0f, 0f, 63f);
+            }
+            a.poses.AddRange(new[] { still, big, small });
+            float length = Tween.Length(a);
+
+            Tween.AutoTime(a);
+            Assert.Greater(a.poses[0].transition.duration, a.poses[1].transition.duration, "the big move snaps slower than the tiny one");
+            Assert.Greater(a.poses[1].hold, a.poses[2].hold, "the pose a big move lands on holds longer");
+            Assert.AreEqual(length, Tween.Length(a), 2f / 12f, "same overall length, only the rhythm changes");
+            foreach (var p in a.poses)
+                Assert.AreEqual(0f, Mathf.Repeat(p.hold * 12f + 0.5f, 1f) - 0.5f, 1e-3f, "holds land on the 12 fps grid");
+
+            Tween.AutoTime(a); // running it twice keeps the original timing for Reset
+            Tween.ResetTiming(a);
+            Assert.IsFalse(Tween.HasSavedTiming(a));
+            foreach (var p in a.poses)
+            {
+                Assert.AreEqual(0.1f, p.hold, 1e-6f);
+                Assert.IsFalse(p.customTransition);
+            }
+        }
+
+        [Test]
         public void GroundingUsesTheRealMesh()
         {
             var model = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Characters/default.fbx");
