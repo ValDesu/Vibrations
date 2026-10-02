@@ -34,6 +34,8 @@ Press Play, then **Export Clip**, and you're done.
   twos), overlap, and looseness so arms drag and keep swinging after the body snaps.
 - **Fast posing.** IK handles on hands and feet, a hips handle that keeps feet planted, rotation rings on
   every joint, a floor that feet snap to, onion skin, and one-click left ↔ right mirroring.
+- **Global Edit.** Click the tool icon on the pose strip, rotate joints on one pose (arms a bit wider, head lower...),
+  and apply the same change to every pose at once. An orange ghost shows the pose before.
 - **Humanize.** Joint limits, moving holds, auto-inbetweens for big jumps, subtle life, and automatic
   spine and head follow-through driven by the body's movement.
 - **Templates.** Starter animations (Pixar Walk, Sneak, Idle, Walk, Run, Jump, Sit down, Wave), each with
@@ -70,7 +72,7 @@ Or add it to `Packages/manifest.json`:
 }
 ```
 
-To pin a version, add a tag at the end: `...?path=/Packages/com.meowarts.vibrations#v0.2.1`.
+To pin a version, add a tag at the end: `...?path=/Packages/com.meowarts.vibrations#v0.2.2`.
 To update, use **Update** in the Package Manager, or change the tag.
 
 Unity installs the dependency (Newtonsoft JSON, an official Unity package) automatically.
@@ -129,6 +131,8 @@ Good to know:
 - **Snappy body + high looseness** gives the Pixar-style drag and swing in the arms.
 - **With choppiness at 12**, keep holds and snap times in multiples of 1/12 s so every pose lands on a frame.
 - **Clean up after posing:** *Fix All* (Animate tab → Tools) centers and grounds every pose.
+- **Change every pose at once:** turn on *Global Edit* (tool icon, top right of the pose strip), rotate joints on the
+  selected pose, then *Apply to All*. Shift/Cmd-click cards first to change only those.
 
 ## Limitations
 

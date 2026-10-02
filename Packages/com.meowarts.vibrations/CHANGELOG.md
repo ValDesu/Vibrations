@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2] - 2026-10-02
+
+- Global Edit: a tool icon at the top right of the pose strip. Turn it on, rotate joints on the selected pose (an orange
+  ghost shows it before), then **Apply to All** adds the same rotations to every pose, or to the Shift/Cmd-clicked ones.
+  Joint limits and grounding apply as for a hand edit, and one undo reverts it. Cancel, or selecting another pose,
+  playing or using another tool, puts the pose back.
+
 ## [0.2.1] - 2026-10-02
 
 - Animations remember the rig they were made on. Opening one on a character with a different rig no longer breaks it
