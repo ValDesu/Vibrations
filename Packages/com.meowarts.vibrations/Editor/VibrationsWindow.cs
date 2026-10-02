@@ -44,6 +44,14 @@ namespace Vibrations
         [SerializeField] int tab;
 
         Transform[] bones;
+        // The selected pose when Global Edit started: what's changed since is spread to the others. NonSerialized: a domain
+        // reload would bring it back as an empty Pose (never null), turn the mode on and write that blank pose on cancel.
+        [NonSerialized] Pose baseline;
+        PoseRenderer.Snapshot baselineGhost;
+        Button globalButton;
+        VisualElement globalBar;
+        bool GlobalEditing => baseline != null;
+        static readonly Color GlobalGhostColor = new(1f, 0.55f, 0.15f, 0.35f);
         Transform[] undoBones; // bones minus the optional ones this rig lacks (Undo rejects nulls)
         SerializedObject so;
         bool playing, previewing;
@@ -129,6 +137,7 @@ namespace Vibrations
             aiCancel?.Cancel();
             foreach (var t in aiImages) DestroyImmediate(t);
             aiImages.Clear();
+            CancelGlobalEdit();
             Stop();
             Commit();
             ReleaseRendering();
@@ -195,6 +204,8 @@ namespace Vibrations
             humanHandler = null;
             ghost?.Dispose();
             scratch?.Dispose();
+            baselineGhost?.Dispose();
+            baselineGhost = null;
             poseRenderer = null;
             ghost = scratch = null;
             foreach (var rt in thumbs) if (rt) { rt.Release(); DestroyImmediate(rt); }
@@ -207,6 +218,7 @@ namespace Vibrations
 
         void SetAnimation(VibrationsAnimation a)
         {
+            CancelGlobalEdit();
             Stop();
             Commit();
             anim = a;
@@ -241,6 +253,7 @@ namespace Vibrations
 
         void Select(int i)
         {
+            if (i != selected) CancelGlobalEdit();
             Stop();
             if (picked.Count > 0)
             {
@@ -272,6 +285,7 @@ namespace Vibrations
 
         void EditPoses(string undoName, Action edit)
         {
+            CancelGlobalEdit();
             PoseEdits.Add(undoName);
             Stop();
             Commit();
@@ -449,6 +463,62 @@ namespace Vibrations
             Refresh();
         }
 
+        // Global Edit: the selected pose is snapshotted (orange ghost), and on Apply the joint rotations changed since
+        // are added to the other poses, or to the Shift/Cmd-clicked ones: widen the arms once, every pose gets wider arms.
+        void ToggleGlobalEdit()
+        {
+            if (GlobalEditing) { CancelGlobalEdit(); return; }
+            if (!HasSelection) return;
+            Stop();
+            Commit();
+            baseline = anim.poses[selected].Clone();
+            baselineGhost = poseRenderer.Bake(baselineGhost);
+            activeBone = -1;
+            Refresh();
+            SceneView.RepaintAll();
+        }
+
+        // Leaves Global Edit with the selected pose back as it was. Anything that changes pose, animation or character calls it.
+        void CancelGlobalEdit()
+        {
+            if (!GlobalEditing) return;
+            var p = baseline;
+            baseline = null;
+            if (HasSelection)
+            {
+                Rig.Apply(bones, p.rotations, p.hipsPosition);
+                Commit();
+            }
+            Refresh();
+            SceneView.RepaintAll();
+        }
+
+        void ApplyGlobalEdit()
+        {
+            if (!HasSelection || !GlobalEditing) return;
+            var current = new Pose();
+            Rig.Capture(bones, current);
+            var deltas = new Quaternion?[bones.Length];
+            for (int b = 0; b < bones.Length; b++)
+                if (bones[b] && Quaternion.Angle(current.rotations[b], baseline.rotations[b]) > 0.01f)
+                    deltas[b] = current.rotations[b] * Quaternion.Inverse(baseline.rotations[b]); // in the parent's space
+            if (deltas.All(d => d == null))
+            {
+                ShowNotification(new GUIContent("Rotate joints on this pose first"));
+                return;
+            }
+            baseline = null;
+            var targets = picked.Count > 1 ? new List<int>(picked) : AllPoses();
+            targets.Remove(selected);
+            EditEach(targets, "Global edit", () =>
+            {
+                for (int b = 0; b < bones.Length; b++)
+                    if (deltas[b] is { } d) bones[b].localRotation = d * bones[b].localRotation;
+                if (anim.humanize && anim.jointLimits) Rig.ClampToLimits(humanHandler, bones, animator.transform);
+                if (floor && keepGrounded) Ground();
+            });
+        }
+
         List<int> AllPoses() => Enumerable.Range(0, anim.poses.Count).ToList();
 
         List<int> SelectedPoses() => HasSelection ? Targets(selected) : new List<int>();
@@ -463,6 +533,7 @@ namespace Vibrations
 
         void TogglePlay()
         {
+            CancelGlobalEdit();
             if (playing) { Stop(); return; }
             if (!previewing) Commit();
             previewing = playing = true;
@@ -471,6 +542,7 @@ namespace Vibrations
 
         void Scrub(float t)
         {
+            CancelGlobalEdit();
             if (!previewing) Commit();
             previewing = true;
             playing = false;
@@ -663,7 +735,7 @@ namespace Vibrations
             characterField = new ObjectField("Character") { objectType = typeof(Animator), allowSceneObjects = true, value = animator };
             characterField.RegisterValueChangedCallback(e =>
             {
-                Stop(); Commit(); RestoreRest();
+                CancelGlobalEdit(); Stop(); Commit(); RestoreRest();
                 Bind((Animator)e.newValue);
                 signature = null;
                 Refresh();
@@ -754,7 +826,18 @@ namespace Vibrations
 
         void BuildStrip(VisualElement parent)
         {
-            var section = Section(parent, "POSES");
+            var section = Add(parent, "vb-section");
+            var head = Add(section, "vb-row");
+            head.Add(new Label("POSES").Cls("vb-section-title"));
+            head.Add(new VisualElement { style = { flexGrow = 1 } });
+            globalButton = new Button(ToggleGlobalEdit) { tooltip = "Global Edit: rotate joints on this pose and add the same change to every pose" }.Cls("vb-tool");
+            globalButton.Add(new Image { image = EditorGUIUtility.IconContent("CustomTool").image });
+            head.Add(globalButton);
+            globalBar = Add(section, "vb-global-bar");
+            globalBar.Add(new Label("Global Edit: rotate joints on this pose, then apply the change to every pose (or the Shift/Cmd-clicked ones). ").Cls("vb-caption", "vb-global-text"));
+            var globalRow = Add(globalBar, "vb-row");
+            globalRow.Add(MakeButton("Apply to All", ApplyGlobalEdit, "vb-btn-row", "vb-global-apply"));
+            globalRow.Add(MakeButton("Cancel", CancelGlobalEdit, "vb-btn-row"));
             var scroller = new ScrollView(ScrollViewMode.Horizontal) .Cls("vb-strip-scroll");
             section.Add(scroller);
             strip = Add(scroller.contentContainer, "vb-strip");
@@ -1506,6 +1589,8 @@ namespace Vibrations
             float len = Tween.Length(anim);
             scrub.highValue = Mathf.Max(len, 0.01f);
             playButton.EnableInClassList("vb-play--on", playing);
+            globalButton.EnableInClassList("vb-tool--on", GlobalEditing);
+            globalBar.style.display = GlobalEditing ? DisplayStyle.Flex : DisplayStyle.None;
             if (!previewing) timeLabel.text = $"{len:0.00}s · {anim.poses.Count} poses";
             noSelection.style.display = HasSelection ? DisplayStyle.None : DisplayStyle.Flex;
             poseBox.style.display = HasSelection ? DisplayStyle.Flex : DisplayStyle.None;
@@ -1586,9 +1671,14 @@ namespace Vibrations
         {
             if (bones == null || animator == null || aiBusy) return;
             if (floor) DrawFloor();
-            if (onion && ghost != null && (previewing ? onionInPreview : HasSelection) && Event.current.type == EventType.Repaint)
+            if (GlobalEditing && baselineGhost != null && Event.current.type == EventType.Repaint)
             {
                 GL.Clear(true, false, Color.clear); // ghost draws over the character it overlaps
+                poseRenderer.Draw(baselineGhost, GlobalGhostColor, -view.camera.transform.forward);
+            }
+            else if (onion && ghost != null && (previewing ? onionInPreview : HasSelection) && Event.current.type == EventType.Repaint)
+            {
+                GL.Clear(true, false, Color.clear);
                 poseRenderer.Draw(ghost, GhostColor, -view.camera.transform.forward);
             }
             if (previewing || !HasSelection) return;

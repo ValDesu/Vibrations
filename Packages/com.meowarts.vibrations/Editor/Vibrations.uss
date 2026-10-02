@@ -46,6 +46,13 @@
 .vb-time { margin: 0 3px; }
 .vb-loop { margin: 0; }
 .vb-loop > .unity-base-field__label { min-width: 0; margin-right: 4px; }
+.vb-tool { width: 24px; height: 20px; margin: 0 2px 4px 0; padding: 2px; }
+.vb-tool > Image { flex-grow: 1; }
+.vb-tool--on { background-color: rgb(92, 46, 14); border-color: rgb(140, 70, 20); }
+.vb-tool--on > Image { --unity-image-tint-color: rgb(255, 150, 40); }
+.vb-global-bar { border-left-width: 3px; border-color: rgb(255, 140, 38); padding: 4px 0 4px 6px; margin: 0 3px 8px 3px; }
+.vb-global-text { margin-left: 0; }
+.vb-global-apply { -unity-font-style: bold; }
 .vb-export { height: 26px; margin: 0 0 0 8px; -unity-font-style: bold; }
 
 /* Pose strip */
