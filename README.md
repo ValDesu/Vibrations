@@ -1,3 +1,5 @@
+<p align="center"><img src="images/logo/mark.svg" width="120" alt="Vibrations logo: a V that wobbles and settles"></p>
+
 # Vibrations
 
 [![Unity 6](https://img.shields.io/badge/Unity-6000.0%2B-000000?logo=unity&logoColor=white)](https://unity.com/releases/unity-6)

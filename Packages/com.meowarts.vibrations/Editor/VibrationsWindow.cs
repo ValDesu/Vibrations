@@ -112,12 +112,13 @@ namespace Vibrations
         bool HasSelection => Ready && selected >= 0 && selected < anim.poses.Count;
 
         [MenuItem("Window/Vibrations")]
-        static void Open() => GetWindow<VibrationsWindow>("Vibrations");
+        static void Open() => GetWindow<VibrationsWindow>(); // title and icon are set in OnEnable
 
         // --- Lifecycle ---
 
         void OnEnable()
         {
+            titleContent = new GUIContent("Vibrations", AssetDatabase.LoadAssetAtPath<Texture2D>(PackagePath + "VibrationsIcon.png"));
             SceneView.duringSceneGui += OnSceneGUI;
             EditorApplication.update += Tick;
             Undo.undoRedoPerformed += OnUndo;

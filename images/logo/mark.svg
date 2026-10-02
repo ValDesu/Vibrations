@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- A V that snaps and settles: each wobble smaller, like Vibrations' spring overshoot -->
+  <path d="M6,12 L18,50 L29,22 L37,40 L44,26 L50,34 L55,30 L59,31" fill="none" stroke="#FF7A59" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
