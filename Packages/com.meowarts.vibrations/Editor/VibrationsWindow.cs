@@ -44,6 +44,7 @@ namespace Vibrations
         [SerializeField] int tab;
 
         Transform[] bones;
+        Transform[] undoBones; // bones minus the optional ones this rig lacks (Undo rejects nulls)
         SerializedObject so;
         bool playing, previewing;
         double playStart;
@@ -76,7 +77,7 @@ namespace Vibrations
         TabView tabView;
         VisualElement builtInGrid, userGrid, templatesContent;
         Label templatesHint;
-        Button saveTemplateButton;
+        Button saveTemplateButton, convertButton;
         TimingBar timingBar;
         Button resetTimingButton;
         TextField aiPrompt;
@@ -98,7 +99,8 @@ namespace Vibrations
         readonly List<CurveView> curves = new();
         readonly List<VisualElement> poseFields = new();
 
-        bool Ready => bones != null && anim != null && so != null;
+        bool Ready => bones != null && anim != null && so != null && !Foreign;
+        bool Foreign => anim != null && anim.avatar != null && animator != null && anim.avatar != animator.avatar;
         bool HasSelection => Ready && selected >= 0 && selected < anim.poses.Count;
 
         [MenuItem("Window/Vibrations")]
@@ -153,6 +155,7 @@ namespace Vibrations
             bones = a != null && a.isHuman && a.avatar != null ? Rig.Bind(a) : null;
             activeBone = -1;
             if (bones == null) return;
+            undoBones = bones.Where(b => b).ToArray();
             poseRenderer = new PoseRenderer(a);
             humanHandler = new HumanPoseHandler(a.avatar, a.transform);
 
@@ -231,6 +234,7 @@ namespace Vibrations
             Rig.Capture(bones, captured);
             Undo.RecordObject(anim, "Edit pose");
             anim.poses[selected] = captured;
+            if (anim.avatar == null) anim.avatar = animator.avatar;
             EditorUtility.SetDirty(anim);
             so.Update();
         }
@@ -557,6 +561,7 @@ namespace Vibrations
             if (string.IsNullOrEmpty(path)) return;
             Commit();
             var a = CreateInstance<VibrationsAnimation>();
+            a.avatar = animator.avatar;
             a.ApplyPreset(settings.defaultPreset);
             var p = new Pose { name = "Pose 1" };
             Rig.Capture(bones, p);
@@ -677,6 +682,8 @@ namespace Vibrations
             Step(empty, "1", "Pick a Humanoid character from the scene");
             Step(empty, "2", "Create an animation with New");
             Step(empty, "3", "Pose, add poses, play, export");
+            convertButton = MakeButton("Make a Copy for This Character", ConvertAnimation, "vb-btn-row");
+            empty.Add(convertButton);
 
             main = Add(animate);
             BuildTransport(main);
@@ -1252,6 +1259,7 @@ namespace Vibrations
             var saved = Rig.SaveAll(animator.transform);
             var a = TemplateContext().CreateAnimation(t);
             Rig.RestoreAll(saved);
+            a.avatar = animator.avatar;
             AssetDatabase.CreateAsset(a, path);
             SetAnimation(a);
             tabView.selectedTabIndex = 0;
@@ -1287,6 +1295,55 @@ namespace Vibrations
             templatesDirty = true;
             ApplySelected();
             ShowNotification(new GUIContent($"Saved template {t.name}"));
+        }
+
+        // Copies an animation made on another rig onto this character, through muscle space like a template.
+        // The source rig comes from the model its avatar was imported with, so it doesn't need to be in the scene.
+        void ConvertAnimation()
+        {
+            var source = anim;
+            var model = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GetAssetPath(source.avatar));
+            if (model == null)
+            {
+                EditorUtility.DisplayDialog("Make a copy", $"Can't find the model that {source.avatar.name} comes from. " +
+                    "Open the animation on its original character and use Save Current Animation as Template instead.", "OK");
+                return;
+            }
+            var path = AssetDatabase.GenerateUniqueAssetPath(Path.Combine(Path.GetDirectoryName(AssetDatabase.GetAssetPath(source)),
+                $"{source.name} ({animator.name}).asset"));
+
+            var instance = (GameObject)Instantiate(model);
+            instance.hideFlags = HideFlags.HideAndDontSave;
+            VibrationsTemplate template = null;
+            try
+            {
+                var a = instance.GetComponentInChildren<Animator>() ?? instance.AddComponent<Animator>();
+                a.avatar = source.avatar;
+                var rest = new Pose();
+                var sourceBones = Rig.Bind(a);
+                Rig.Capture(sourceBones, rest);
+                using var renderer = new PoseRenderer(a);
+                using var handler = new HumanPoseHandler(a.avatar, a.transform);
+                PoseRenderer.Snapshot snapshot = null;
+                float Lowest() => renderer.Lowest(ref snapshot);
+                template = new TemplateRig
+                {
+                    root = a.transform, bones = sourceBones, handler = handler, rest = rest, soles = new float[Rig.SoleBones.Length],
+                    floorHeight = Lowest(), humanScale = a.humanScale > 0f ? a.humanScale : 1f, lowestPoint = Lowest,
+                }.CreateTemplate(source);
+                snapshot?.Dispose();
+            }
+            finally { DestroyImmediate(instance); }
+
+            var saved = Rig.SaveAll(animator.transform);
+            var copy = TemplateContext().CreateAnimation(template);
+            Rig.RestoreAll(saved);
+            DestroyImmediate(template);
+            copy.avatar = animator.avatar;
+            AssetDatabase.CreateAsset(copy, path);
+            AssetDatabase.SaveAssets();
+            SetAnimation(copy);
+            ShowNotification(new GUIContent($"Created {Path.GetFileName(path)}"));
         }
 
         // --- AI assistant ---
@@ -1420,7 +1477,10 @@ namespace Vibrations
             }
             emptyText.text = animator == null ? "Pick a character to start."
                 : bones == null ? "This character needs a Humanoid avatar: model import settings → Rig → Humanoid."
+                : Foreign ? $"This animation was made for {anim.avatar.name}. Poses don't carry over between rigs as they are, but a copy can be converted for {animator.name}."
                 : "Create or pick an animation.";
+            convertButton.style.display = Foreign && bones != null ? DisplayStyle.Flex : DisplayStyle.None;
+            foreach (var step in empty.Query(className: "vb-step").ToList()) step.style.display = Foreign ? DisplayStyle.None : DisplayStyle.Flex;
             characterField.SetValueWithoutNotify(animator);
             templatesHint.style.display = bones == null ? DisplayStyle.Flex : DisplayStyle.None;
             templatesContent.style.display = bones == null ? DisplayStyle.None : DisplayStyle.Flex;
@@ -1547,7 +1607,7 @@ namespace Vibrations
                 if (GUIUtility.hotControl == id) activeBone = c;
                 if (EditorGUI.EndChangeCheck())
                 {
-                    Undo.RecordObjects(bones, "Move limb");
+                    Undo.RecordObjects(undoBones, "Move limb");
                     if (leg && floor) target.y = SnapToFloor(target.y, soles[c == 16 ? 0 : 2]);
                     Rig.SolveTwoBone(bones[a], bones[b], bones[c], target, leg ? root.forward : -root.forward, keepEndWorldRotation: leg);
                     changed = true;
@@ -1563,7 +1623,7 @@ namespace Vibrations
             if (GUIUtility.hotControl == hipsId) activeBone = 0;
             if (EditorGUI.EndChangeCheck())
             {
-                Undo.RecordObjects(bones, "Move hips");
+                Undo.RecordObjects(undoBones, "Move hips");
                 var feet = new (Vector3 pos, Quaternion rot)[Limbs.Length];
                 for (int i = 0; i < Limbs.Length; i++)
                     if (bones[Limbs[i].c]) feet[i] = (bones[Limbs[i].c].position, bones[Limbs[i].c].rotation);
@@ -1600,7 +1660,7 @@ namespace Vibrations
                     var r = Handles.Disc(t.rotation, t.position, axis, radius, true, 0f);
                     if (EditorGUI.EndChangeCheck())
                     {
-                        Undo.RecordObjects(bones, "Rotate bone");
+                        Undo.RecordObjects(undoBones, "Rotate bone");
                         t.rotation = r;
                         changed = true;
                     }

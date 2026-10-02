@@ -60,6 +60,7 @@ namespace Vibrations
         };
 
         public List<Pose> poses = new();
+        [HideInInspector] public Avatar avatar; // the rig the poses were captured on: they're local bone rotations, so they only fit it
         [Tooltip("Last pose tweens back to the first.")]
         public bool loop = true;
         public Transition transition = Presets[0].transition;
