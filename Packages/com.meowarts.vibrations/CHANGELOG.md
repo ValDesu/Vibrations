@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1] - 2026-10-02
+
+- Animations remember the rig they were made on. Opening one on a character with a different rig no longer breaks it
+  (rotated, floating, only the arms moving): the Animate tab offers **Make a Copy for This Character**, which converts
+  the poses through Humanoid muscles into a new animation next to the original. The source character doesn't need to be
+  in the scene. Animations from earlier versions record their rig the first time a pose is selected.
+- Fix: posing a rig without some optional Humanoid bones (UpperChest, Toes...) threw "Undo objects may not be null".
+
 ## [0.2.0] - 2026-09-28
 
 - Mirror poses left ↔ right, exact on any Humanoid rig (right-click a card, or Mirror in the Pose tools).

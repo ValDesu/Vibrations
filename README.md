@@ -38,6 +38,8 @@ Press Play, then **Export Clip**, and you're done.
   spine and head follow-through driven by the body's movement.
 - **Templates.** Starter animations (Pixar Walk, Sneak, Idle, Walk, Run, Jump, Sit down, Wave), each with
   its own feel. Save your own and share them with the team. They work on any Humanoid character.
+- **Any Humanoid rig.** Open an animation on a character with a different rig and click
+  **Make a Copy for This Character**: the poses are converted through Humanoid muscles, no template needed.
 - **Timing bar.** The whole animation to scale. Drag edges to change holds and snap times.
 - **AI assistant (optional).** Prompt Claude or GPT to fill in-betweens, fix timing or tune the feel. It
   edits the animation through Vibrations' tools and renders previews to check its own work.
@@ -68,7 +70,7 @@ Or add it to `Packages/manifest.json`:
 }
 ```
 
-To pin a version, add a tag at the end: `...?path=/Packages/com.meowarts.vibrations#v0.2.0`.
+To pin a version, add a tag at the end: `...?path=/Packages/com.meowarts.vibrations#v0.2.1`.
 To update, use **Update** in the Package Manager, or change the tag.
 
 Unity installs the dependency (Newtonsoft JSON, an official Unity package) automatically.
