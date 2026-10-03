@@ -58,6 +58,7 @@ namespace Vibrations
         double playStart;
         float previewTime;
         int activeBone = -1;
+        bool showGizmo; // Unity's transform gizmo: back on a manual select, hidden again on a Vibrations click
         int previewGhost = -1; // pose shown as the ghost while previewing
 
         HumanPoseHandler humanHandler;
@@ -120,6 +121,12 @@ namespace Vibrations
         {
             titleContent = new GUIContent("Vibrations", AssetDatabase.LoadAssetAtPath<Texture2D>(PackagePath + "VibrationsIcon.png"));
             SceneView.duringSceneGui += OnSceneGUI;
+            Selection.selectionChanged += ShowGizmo;
+#if UNITY_6000_4_OR_NEWER
+            EditorApplication.hierarchyWindowItemByEntityIdOnGUI += OnHierarchyItem;
+#else
+            EditorApplication.hierarchyWindowItemOnGUI += OnHierarchyItem;
+#endif
             EditorApplication.update += Tick;
             Undo.undoRedoPerformed += OnUndo;
             Undo.undoRedoEvent += OnUndoRedo;
@@ -132,6 +139,13 @@ namespace Vibrations
         void OnDisable()
         {
             SceneView.duringSceneGui -= OnSceneGUI;
+            Selection.selectionChanged -= ShowGizmo;
+#if UNITY_6000_4_OR_NEWER
+            EditorApplication.hierarchyWindowItemByEntityIdOnGUI -= OnHierarchyItem;
+#else
+            EditorApplication.hierarchyWindowItemOnGUI -= OnHierarchyItem;
+#endif
+            Tools.hidden = false;
             EditorApplication.update -= Tick;
             Undo.undoRedoPerformed -= OnUndo;
             Undo.undoRedoEvent -= OnUndoRedo;
@@ -725,6 +739,7 @@ namespace Vibrations
         void CreateGUI()
         {
             var root = rootVisualElement;
+            root.RegisterCallback<PointerDownEvent>(_ => showGizmo = false, TrickleDown.TrickleDown);
             root.styleSheets.Add(AssetDatabase.LoadAssetAtPath<StyleSheet>(PackagePath + "Vibrations.uss"));
             tabView = new TabView().Cls("vb-tabview");
             root.Add(tabView);
@@ -1681,8 +1696,27 @@ namespace Vibrations
 
         // --- Scene view ---
 
+        void ShowGizmo()
+        {
+            showGizmo = true;
+            SceneView.RepaintAll();
+        }
+
+        // Clicking the already-selected character in the Hierarchy doesn't change the selection, so catch the click.
+#if UNITY_6000_4_OR_NEWER
+        void OnHierarchyItem(EntityId id, Rect rect)
+#else
+        void OnHierarchyItem(int id, Rect rect)
+#endif
+        {
+            if (Event.current.type == EventType.MouseDown && rect.Contains(Event.current.mousePosition)) ShowGizmo();
+        }
+
         void OnSceneGUI(SceneView view)
         {
+            // Unity's move/rotate gizmo on the selected character would sit on top of the pose handles.
+            var active = Selection.activeTransform;
+            Tools.hidden = !showGizmo && bones != null && animator != null && !aiBusy && !previewing && HasSelection && active && active.IsChildOf(animator.transform);
             if (bones == null || animator == null || aiBusy) return;
             if (floor) DrawFloor();
             if (GlobalEditing && baselineGhost != null && Event.current.type == EventType.Repaint)
@@ -1748,7 +1782,7 @@ namespace Vibrations
                 var pos = bones[i].position;
                 float size = HandleUtility.GetHandleSize(pos) * 0.035f;
                 Handles.color = activeBone == i ? Accent : new Color(1f, 1f, 1f, 0.8f);
-                if (Handles.Button(pos, Quaternion.identity, size, size * 1.6f, Handles.DotHandleCap)) activeBone = i;
+                if (Handles.Button(pos, Quaternion.identity, size, size * 1.6f, Handles.DotHandleCap)) (activeBone, showGizmo) = (i, false);
             }
 
             // Rotation rings on the active bone (local axes, front half only).
@@ -1771,6 +1805,7 @@ namespace Vibrations
                 }
             }
 
+            if (changed) showGizmo = false;
             if (changed && anim.humanize && anim.jointLimits) Rig.ClampToLimits(humanHandler, bones, animator.transform);
             if (changed && floor && anim.poses[selected].grounded) Ground();
         }
