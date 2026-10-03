@@ -1,10 +1,13 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.3] - 2026-10-03
 
 - Grounding is now per pose: a **Grounded** toggle in the new Ground section of the Pose tab (with Ground / Ground All).
   Turn it off on airborne poses, like the top of a jump, and the rest of the animation stays on the floor. It replaces
-  the window-wide Keep grounded setting. Dragging the hips of an ungrounded pose lifts the whole body. Templates and AI poses with a lift come in ungrounded.
+  the window-wide Keep grounded setting. Dragging the hips of an ungrounded pose lifts the whole body. Templates and
+  AI poses with a lift come in ungrounded.
+- While you edit a pose, Unity's move/rotate gizmo is hidden so it doesn't cover the pose handles. Clicking the
+  character in the Hierarchy brings it back; clicking in Vibrations hides it again.
 
 ## [0.2.2] - 2026-10-02
 
