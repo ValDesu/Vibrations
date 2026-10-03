@@ -22,7 +22,7 @@
 
 ## Workflow
 
-1. **Drag the character into place.** Grab a hand or a foot and move it: IK bends the arm or leg for you. The character stays grounded on the floor the whole time, so you never fix heights by hand.
+1. **Drag the character into place.** Grab a hand or a foot and move it: IK bends the arm or leg for you. The character stays grounded on the floor the whole time, so you never fix heights by hand (turn **Grounded** off on a pose to lift it, like the top of a jump).
 2. **Add a few poses.** Click **+** to copy the current pose, move things around, repeat.
 3. **Humanize it.** Turn on Humanize and the spine and head follow the body's movement on their own.
 

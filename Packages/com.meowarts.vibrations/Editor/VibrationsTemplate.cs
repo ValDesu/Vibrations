@@ -68,7 +68,8 @@ namespace Vibrations
         public Pose ToPose(TemplatePose tp)
         {
             Apply(tp);
-            var p = new Pose { name = tp.name, hold = tp.hold, customTransition = tp.customTransition, transition = tp.transition };
+            var p = new Pose { name = tp.name, hold = tp.hold, customTransition = tp.customTransition, transition = tp.transition,
+                grounded = tp.lift <= 0f };
             Rig.Capture(bones, p);
             return p;
         }

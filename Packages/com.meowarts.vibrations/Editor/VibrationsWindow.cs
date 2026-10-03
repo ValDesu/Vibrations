@@ -36,7 +36,7 @@ namespace Vibrations
         [SerializeField] Animator restOwner;
         [SerializeField] float[] soles = new float[4]; // rest height of each sole bone above the floor
         [SerializeField] Vector3 restCenter, restSize; // character bounds at rest, relative to the root (thumbnail framing)
-        [SerializeField] bool onion = true, onionInPreview, floor = true, keepGrounded = true;
+        [SerializeField] bool onion = true, onionInPreview, floor = true;
         [SerializeField] float floorHeight;
         [SerializeField] int calibration;
         [SerializeField] Vector3 restHips; // hips at rest, in the character's space
@@ -441,13 +441,13 @@ namespace Vibrations
         }
 
         // Runs a rig operation (ground, center...) on each target pose and stores the result.
-        void EditEach(List<int> targets, string undoName, Action operation) => EditPoses(undoName, () =>
+        void EditEach(List<int> targets, string undoName, Action<Pose> operation) => EditPoses(undoName, () =>
         {
             foreach (var k in targets)
             {
                 var p = anim.poses[k].Clone();
                 Rig.Apply(bones, p.rotations, p.hipsPosition);
-                operation();
+                operation(p);
                 Rig.Capture(bones, p);
                 anim.poses[k] = p;
             }
@@ -511,12 +511,12 @@ namespace Vibrations
             baseline = null;
             var targets = picked.Count > 1 ? new List<int>(picked) : AllPoses();
             targets.Remove(selected);
-            EditEach(targets, "Global edit", () =>
+            EditEach(targets, "Global edit", p =>
             {
                 for (int b = 0; b < bones.Length; b++)
                     if (deltas[b] is { } d) bones[b].localRotation = d * bones[b].localRotation;
                 if (anim.humanize && anim.jointLimits) Rig.ClampToLimits(humanHandler, bones, animator.transform);
-                if (floor && keepGrounded) Ground();
+                if (floor && p.grounded) Ground();
             });
         }
 
@@ -1065,26 +1065,41 @@ namespace Vibrations
             section.Add(custom);
             transitionBox = Add(section, "vb-indent");
             curves.Add(TransitionControls(transitionBox, "", () => HasSelection ? anim.TransitionOut(selected) : default));
+            var ground = Section(poseBox, "GROUND");
+            var grounded = new Toggle("Grounded") { tooltip = "After each edit, move the body so its lowest point (feet, knees, hands...) touches the floor." }
+                .Cls("vb-toggle");
+            grounded.RegisterValueChangedCallback(e =>
+            {
+                if (!e.newValue || !floor || previewing || !HasSelection) return;
+                Undo.RecordObjects(undoBones, "Ground pose");
+                Ground();
+                SceneView.RepaintAll();
+            });
+            ground.Add(grounded);
+            ground.Add(Caption("Per pose: turn off for airborne poses, like the top of a jump."));
+            var groundRow = Add(ground, "vb-row");
+            groundRow.Add(MakeButton("Ground", () => EditEach(SelectedPoses(), "Ground pose", _ => Ground()), "vb-btn-row"));
+            groundRow.Add(MakeButton("Ground All", () => EditEach(AllPoses(), "Ground all poses", _ => Ground()), "vb-btn-row"));
             var tools = Section(poseBox, "TOOLS");
             var one = Add(tools, "vb-row");
             one.Add(new Label("Selected").Cls("vb-tools-label"));
-            one.Add(MakeButton("Ground", () => EditEach(SelectedPoses(), "Ground pose", Ground), "vb-btn-row"));
-            one.Add(MakeButton("Center", () => EditEach(SelectedPoses(), "Center pose", Center), "vb-btn-row"));
+            one.Add(MakeButton("Center", () => EditEach(SelectedPoses(), "Center pose", _ => Center()), "vb-btn-row"));
             one.Add(MakeButton("Mirror", () => MirrorPoses(SelectedPoses()), "vb-btn-row"));
-            one.Add(MakeButton("Reset to Rest", () => EditEach(SelectedPoses(), "Reset pose", RestoreRest), "vb-btn-row"));
+            one.Add(MakeButton("Reset to Rest", () => EditEach(SelectedPoses(), "Reset pose", _ => RestoreRest()), "vb-btn-row"));
             var all = Add(tools, "vb-row");
             all.Add(new Label("All poses").Cls("vb-tools-label"));
-            all.Add(MakeButton("Ground All", () => EditEach(AllPoses(), "Ground all poses", Ground), "vb-btn-row"));
-            all.Add(MakeButton("Center All", () => EditEach(AllPoses(), "Center all poses", Center), "vb-btn-row"));
+            all.Add(MakeButton("Center All", () => EditEach(AllPoses(), "Center all poses", _ => Center()), "vb-btn-row"));
             all.Add(MakeButton("Mirror All", () => MirrorPoses(AllPoses()), "vb-btn-row"));
-            all.Add(MakeButton("Fix All", () => EditEach(AllPoses(), "Fix all poses", () => { Center(); Ground(); }), "vb-btn-row"));
+            all.Add(MakeButton("Fix All", () => EditEach(AllPoses(), "Fix all poses", _ => { Center(); Ground(); }), "vb-btn-row"));
             tools.Add(Caption("Selected = the pose you're editing, or every pose you Shift/Cmd-clicked. " +
-                              "Ground puts the lowest foot on the floor, Center puts the hips over the character, Fix does both."));
-            tools.Add(new Label("In the Scene view: drag ● hands and feet, ■ hips (feet stay planted). Click any joint to rotate it with the rings.")
+                              "Center puts the hips over the character, Fix centers and grounds."));
+            tools.Add(new Label("In the Scene view: drag ● hands and feet, ■ hips (feet stay planted on grounded poses). Click any joint to rotate it with the rings.")
                 .Cls("vb-hint"));
             poseFields.Add(name);
             poseFields.Add(hold);
             poseFields.Add(custom);
+            poseFields.Add(grounded);
+            grounded.userData = "grounded";
             name.userData = "name";
             hold.userData = "hold";
             custom.userData = "customTransition";
@@ -1214,8 +1229,6 @@ namespace Vibrations
                 else ShowNotification(new GUIContent("No ground collider under the character"));
                 SceneView.RepaintAll();
             }, "vb-btn-inline"));
-            section.Add(WindowToggle("Keep grounded", "After each edit, move the body so the lowest foot touches the floor. Turn off for jumps.",
-                () => keepGrounded, v => keepGrounded = v));
         }
 
         void BuildSettings(VisualElement parent)
@@ -1699,13 +1712,13 @@ namespace Vibrations
                 if (EditorGUI.EndChangeCheck())
                 {
                     Undo.RecordObjects(undoBones, "Move limb");
-                    if (leg && floor) target.y = SnapToFloor(target.y, soles[c == 16 ? 0 : 2]);
+                    if (leg && floor && anim.poses[selected].grounded) target.y = SnapToFloor(target.y, soles[c == 16 ? 0 : 2]);
                     Rig.SolveTwoBone(bones[a], bones[b], bones[c], target, leg ? root.forward : -root.forward, keepEndWorldRotation: leg);
                     changed = true;
                 }
             }
 
-            // Hips: move the body, re-solve legs so feet stay planted.
+            // Hips: move the body, re-solve legs so feet stay planted (unless the pose is airborne).
             var hips = bones[0];
             int hipsId = GUIUtility.GetControlID(FocusType.Passive);
             Handles.color = activeBone == 0 ? Color.white : Color.yellow;
@@ -1719,7 +1732,7 @@ namespace Vibrations
                 for (int i = 0; i < Limbs.Length; i++)
                     if (bones[Limbs[i].c]) feet[i] = (bones[Limbs[i].c].position, bones[Limbs[i].c].rotation);
                 hips.position = hipsTarget;
-                for (int i = 0; i < Limbs.Length; i++)
+                for (int i = 0; i < Limbs.Length && anim.poses[selected].grounded; i++) // airborne: the whole body moves
                 {
                     var (a, b, c, leg) = Limbs[i];
                     if (!leg || !bones[a] || !bones[b] || !bones[c]) continue;
@@ -1759,7 +1772,7 @@ namespace Vibrations
             }
 
             if (changed && anim.humanize && anim.jointLimits) Rig.ClampToLimits(humanHandler, bones, animator.transform);
-            if (changed && floor && keepGrounded) Ground();
+            if (changed && floor && anim.poses[selected].grounded) Ground();
         }
 
         void DrawFloor()

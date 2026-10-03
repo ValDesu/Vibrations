@@ -188,6 +188,7 @@ namespace Vibrations.Tests
                     Assert.AreEqual(tp.lift * animator.humanScale, Rig.LowestSole(bones, soles), 0.005f, $"{t.name}/{tp.name} height");
                     var hips = animator.transform.InverseTransformPoint(bones[0].position);
                     Assert.Less(new Vector2(hips.x, hips.z).magnitude, 0.3f, $"{t.name}/{tp.name} stays over the character");
+                    Assert.AreEqual(tp.lift <= 0f, rig.ToPose(tp).grounded, $"{t.name}/{tp.name} airborne poses aren't grounded");
                 }
 
                 var walk = rig.CreateAnimation(System.Linq.Enumerable.First(BuiltInTemplates.All, t => t.name == "Pixar Walk"));

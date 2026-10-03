@@ -28,6 +28,8 @@ namespace Vibrations
         [Tooltip("Override the animation's transition for the move out of this pose.")]
         public bool customTransition;
         public Transition transition;
+        [Tooltip("After each edit, move the body so its lowest point touches the floor. Off for airborne poses.")]
+        public bool grounded = true;
         public Quaternion[] rotations = new Quaternion[Tween.Bones.Length]; // local, indexed like Tween.Bones
         public Vector3 hipsPosition; // local
 

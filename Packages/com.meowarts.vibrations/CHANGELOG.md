@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+- Grounding is now per pose: a **Grounded** toggle in the new Ground section of the Pose tab (with Ground / Ground All).
+  Turn it off on airborne poses, like the top of a jump, and the rest of the animation stays on the floor. It replaces
+  the window-wide Keep grounded setting. Dragging the hips of an ungrounded pose lifts the whole body. Templates and AI poses with a lift come in ungrounded.
+
 ## [0.2.2] - 2026-10-02
 
 - Global Edit: a tool icon at the top right of the pose strip. Turn it on, rotate joints on the selected pose (an orange
